@@ -2,7 +2,7 @@
 // CucCut visual QC: screenshot UI routes through the Runtime's web client (no Electron window needed).
 //
 //   node tools/qc-shot.mjs --out /tmp/shots /home /settings/general [--build] [--home .dev/qc-home] [--port 47701]
-//                          [--size 1600x1000] [--video <videoId>] [--wait 2500]
+//                          [--size 1600x1000] [--video <videoId>] [--wait 2500] [--dist <dir>]
 //
 // Each route is an in-app href (`hrefFor` shape: /home, /space/all, /settings/general, /tasks, /tools …) or `@video`
 // (the editor of --video). `--build` rebuilds apps/web first. Different worktrees should pass different --home/--port.
@@ -24,9 +24,11 @@ const { values, positionals } = parseArgs({
     video: { type: 'string' },
     wait: { type: 'string', default: '2500' },
     build: { type: 'boolean', default: false },
+    // Build the web client into this folder and serve it from there (parallel worktrees/agents each pass their own).
+    dist: { type: 'string' },
   },
 });
-const env = { ...process.env, CUCCUT_HOME: path.resolve(values.home) };
+const env = { ...process.env, CUCCUT_HOME: path.resolve(values.home), ...(values.dist ? { CUCCUT_WEB_DIST: path.resolve(values.dist) } : {}) };
 const cli = (...args) =>
   execFileSync(process.execPath, ['--experimental-strip-types', path.join(repo, 'apps/cli/src/main.ts'), ...args], {
     env,
@@ -35,7 +37,9 @@ const cli = (...args) =>
     stdio: ['ignore', 'pipe', 'inherit'],
   });
 
-if (values.build) execFileSync('npm', ['run', 'build:web'], { cwd: repo, stdio: 'inherit' });
+if (values.build && values.dist) {
+  execFileSync('npx', ['vite', 'build', '--outDir', path.resolve(values.dist), '--emptyOutDir'], { cwd: path.join(repo, 'apps/web'), stdio: 'inherit' });
+} else if (values.build) execFileSync('npm', ['run', 'build:web'], { cwd: repo, stdio: 'inherit' });
 mkdirSync(values.out, { recursive: true });
 mkdirSync(env.CUCCUT_HOME, { recursive: true });
 cli('runtime', 'ensure', '--json');

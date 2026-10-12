@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const fr: MusicLocalMessages = {
+  defaultDesc: "Présélectionné à la génération de musique. Sans défaut, vous choisissez le modèle vous-même ; le choix manuel reste prioritaire.",
+  cloudDefault: (name) => `Le défaut est ${name} ; choisir ici un modèle local le remplace.`,
+  noInstalled: "Aucun modèle de musique installé. Téléchargez-en un ci-dessous.",
+  licenseUse: "La musique créée avec ce modèle est elle aussi réservée aux contenus non commerciaux ; pour une vidéo à usage commercial, utilisez une autre musique.",
+  style: "Style",
+  mode: "Forme",
+  note: (seconds, steps, eta) => `L’aperçu est fixé à ${seconds} s${steps !== null ? `, ${steps} étapes` : ''}, sans planification ; il vérifie seulement que ce modèle et son moteur musical produisent du son. ${eta}.`,
+  songNote: "Une chanson utilise de courtes paroles d’exemple intégrées.",
+  toolNote: "Pour une vraie bande-son, utilisez Outils › Générer de la musique.",
+  openTool: "Ouvrir Générer de la musique",
+  generate: "Générer un aperçu",
+  again: "Générer à nouveau",
+  cancel: "Annuler",
+  busy: "Génération…",
+  stalePrefix: "Précédent · ",
+  stale: "Ce clip utilise vos anciens choix. Après changement de style ou de forme, cliquez « Générer un aperçu » pour le nouveau.",
+  download: "Télécharger",
+  resultLabel: "Résultat de l’aperçu",
+  loadingAudio: "Chargement de l’audio…",
+  audioFailed: (message) => `Impossible de charger l’audio : ${message}`,
+  downloadFailed: (message) => `Impossible de télécharger : ${message}`,
+  fileName: (name) => `Aperçu ${name}.wav`,
+};

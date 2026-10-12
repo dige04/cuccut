@@ -1,0 +1,366 @@
+/*
+ * CucCut — agentcut's Liquid Glass, dark only (agentcut DESIGN.md is the reference; read it before changing this).
+ *
+ * Two kinds of UI share this sheet:
+ *  - CucCut's own surfaces (navigation bar, home, workspace shells) are built from the Tailwind primitives in
+ *    `src/cc/ui` exactly as agentcut builds them;
+ *  - CucCut's Spectrum 2 panels keep their components; `tools/cuccut-theme.ts` remaps their palette at build time
+ *    and the unlayered rules at the bottom of this file give them agentcut's controls (pills, recessed fields, the
+ *    one yellow tint, glass popovers, solid dialogs).
+ *
+ * Layer order is declared in index.html (theme, base, components, utilities first), so S2's layered atoms win
+ * over Tailwind's preflight, and unlayered rules here win over both.
+ */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@import 'tw-animate-css';
+@import '@fontsource-variable/figtree';
+@import '@fontsource-variable/jetbrains-mono';
+
+@source '..';
+
+@custom-variant dark (&:is(.dark *));
+@custom-variant reduce-transparency (@media (prefers-reduced-transparency: reduce));
+@custom-variant more-contrast (@media (prefers-contrast: more));
+
+/* The data-attribute variants shadcn ships (agentcut imports them from shadcn/tailwind.css). */
+@custom-variant data-open {
+  &:where([data-state='open']),
+  &:where([data-open]:not([data-open='false'])) {
+    @slot;
+  }
+}
+@custom-variant data-closed {
+  &:where([data-state='closed']),
+  &:where([data-closed]:not([data-closed='false'])) {
+    @slot;
+  }
+}
+@custom-variant data-checked {
+  &:where([data-state='checked']),
+  &:where([data-checked]:not([data-checked='false'])) {
+    @slot;
+  }
+}
+@custom-variant data-unchecked {
+  &:where([data-state='unchecked']),
+  &:where([data-unchecked]:not([data-unchecked='false'])) {
+    @slot;
+  }
+}
+@custom-variant data-selected {
+  &:where([data-selected='true']) {
+    @slot;
+  }
+}
+@custom-variant data-disabled {
+  &:where([data-disabled='true']),
+  &:where([data-disabled]:not([data-disabled='false'])) {
+    @slot;
+  }
+}
+@custom-variant data-active {
+  &:where([data-state='active']),
+  &:where([data-active]:not([data-active='false'])) {
+    @slot;
+  }
+}
+@custom-variant data-horizontal {
+  &:where([data-orientation='horizontal']) {
+    @slot;
+  }
+}
+@custom-variant data-vertical {
+  &:where([data-orientation='vertical']) {
+    @slot;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--cc-font-sans);
+  --font-mono: var(--cc-font-mono);
+  --font-heading: var(--cc-font-sans);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --cc-font-sans: 'Figtree Variable', ui-sans-serif, system-ui, sans-serif;
+  --cc-font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
+  /* S2 reads this for every `font: 'ui' | 'title' | 'body' …`; CJK and Arabic keep S2's per-language fallbacks. */
+  --s2-font-family-sans: 'Figtree Variable';
+
+  /* agentcut palette: #101010 ground, #171717 surfaces, #333 hairlines, #ffda2a accent. Dark only. */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.225 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.879 0.168 96);
+  --primary-foreground: oklch(0.16 0 0);
+  --secondary: oklch(0.262 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.262 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.7 0.16 48);
+  --accent-foreground: oklch(0.16 0 0);
+  --destructive: oklch(0.63 0.23 27);
+  --border: oklch(0.32 0 0);
+  --input: oklch(0.36 0 0);
+  --ring: oklch(0.879 0.168 96 / 60%);
+  --chart-1: oklch(0.879 0.168 96);
+  --chart-2: oklch(0.7 0.16 48);
+  --chart-3: oklch(0.85 0.19 150);
+  --chart-4: oklch(0.97 0 0);
+  --chart-5: oklch(0.65 0.18 265);
+  --radius: 1rem;
+
+  --glass-tint: oklch(0.205 0 0 / 72%);
+  --glass-tint-strong: oklch(0.24 0 0 / 80%);
+  --glass-edge: oklch(1 0 0 / 22%);
+  --glass-specular: oklch(1 0 0 / 10%);
+  --glass-blur: 28px;
+  --control-highlight: inset 0 1px 0 rgb(255 255 255 / 18%);
+  --field-shadow: inset 0 1px 3px rgb(0 0 0 / 25%);
+  --glass-shadow: inset 0 1px 0 var(--glass-specular), inset 0 -1px 0 rgb(0 0 0 / 12%), 0 10px 36px -12px rgb(0 0 0 / 60%);
+  --glass-shadow-raised: inset 0 1px 0 var(--glass-specular), inset 0 -1px 0 rgb(0 0 0 / 16%), 0 20px 60px -12px rgb(0 0 0 / 70%);
+
+  color-scheme: dark;
+  --s2-color-scheme: dark;
+  --s2-container-bg: var(--background);
+}
+
+/* S2's code font is a literal family name: point it at JetBrains Mono. */
+@font-face {
+  font-family: 'source-code-pro';
+  src: local('JetBrains Mono'), local('JetBrainsMono-Regular');
+  font-display: swap;
+}
+
+/* A scoped preflight for CucCut's own surfaces only (Tailwind's global one would reset CucCut's markdown and S2). */
+@layer base {
+  :where([data-cc], [data-cc] *, [data-cc] ::before, [data-cc] ::after) {
+    box-sizing: border-box;
+    border: 0 solid;
+    margin: 0;
+    padding: 0;
+  }
+  :where([data-cc]) :where(button, input, select, textarea) {
+    font: inherit;
+    color: inherit;
+    background-color: transparent;
+    letter-spacing: inherit;
+  }
+  :where([data-cc]) :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+  :where([data-cc]) :where(img, svg, video) {
+    display: block;
+    vertical-align: middle;
+  }
+  :where([data-cc]) :where(img, video) {
+    max-width: 100%;
+    height: auto;
+  }
+  :where([data-cc]) :where(ol, ul) {
+    list-style: none;
+  }
+  :where([data-cc]) :where(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  :where([data-cc] *) {
+    border-color: var(--border);
+    outline-color: color-mix(in oklab, var(--ring), transparent 50%);
+  }
+  :where([data-cc]) :where(button, [role='button'], [role='tab'], [role='menuitem']):not(:disabled):not([aria-disabled='true']):not([data-disabled]) {
+    cursor: pointer;
+  }
+}
+
+@utility glass-surface {
+  background-image:
+    linear-gradient(var(--glass-tint), var(--glass-tint)),
+    linear-gradient(180deg, var(--glass-edge) 0%, color-mix(in oklch, var(--glass-edge), transparent 78%) 40%, transparent 100%);
+  background-origin: padding-box, border-box;
+  background-clip: padding-box, border-box;
+}
+
+@utility glass-flat {
+  background-image: none;
+}
+
+@utility dialog-surface {
+  background: linear-gradient(135deg, rgb(255 255 255 / 4%), transparent 38%), rgb(10 10 12 / 92%);
+  backdrop-filter: blur(28px) saturate(115%);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 28%), inset 1px 0 1px rgb(255 255 255 / 10%), 0 24px 100px rgb(0 0 0 / 65%);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--cc-font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Quiet dark scroll chrome everywhere (agentcut globals.css). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 22%) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 22%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(255 255 255 / 38%);
+}
+
+/* ------------------------------------------------------------------------------------------------------------
+ * Spectrum 2 controls in agentcut's language. Unlayered, so they win over S2's layered atoms; hover and press
+ * states are restated here because the S2 ones are overridden too.
+ * ---------------------------------------------------------------------------------------------------------- */
+
+/* Buttons are capsules. The accent variant is the one primary action: yellow tint, dark ink, top highlight, glow. */
+.cc-btn {
+  border-radius: 999px !important;
+  font-weight: 500;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out, scale 150ms ease-out;
+}
+.cc-btn.cc-btn-accent.cc-fill-fill {
+  background-color: color-mix(in oklab, var(--primary) 85%, transparent) !important;
+  background-image: linear-gradient(to bottom, rgb(255 255 255 / 20%), transparent) !important;
+  border: 1px solid color-mix(in oklab, var(--primary) 40%, transparent) !important;
+  color: var(--primary-foreground) !important;
+  font-weight: 600;
+  box-shadow: var(--control-highlight), 0 3px 16px -6px var(--primary) !important;
+  --iconPrimary: var(--primary-foreground);
+}
+.cc-btn.cc-btn-accent.cc-fill-fill:is([data-hovered], :hover) {
+  background-color: color-mix(in oklab, var(--primary) 95%, transparent) !important;
+}
+.cc-btn.cc-btn-accent.cc-fill-fill :is(svg, [data-rsp-slot='text']) {
+  color: var(--primary-foreground) !important;
+  fill: currentColor;
+}
+/* Neutral buttons (S2 primary / secondary): agentcut's outline capsule — a thin white fill and a highlight. */
+.cc-btn:is(.cc-btn-primary, .cc-btn-secondary).cc-fill-fill,
+.cc-btn.cc-fill-outline {
+  background-color: rgb(255 255 255 / 5%) !important;
+  border: 1px solid rgb(255 255 255 / 15%) !important;
+  color: var(--foreground) !important;
+  box-shadow: var(--control-highlight) !important;
+  --iconPrimary: var(--foreground);
+}
+.cc-btn:is(.cc-btn-primary, .cc-btn-secondary).cc-fill-fill:is([data-hovered], :hover),
+.cc-btn.cc-fill-outline:is([data-hovered], :hover) {
+  background-color: rgb(255 255 255 / 10%) !important;
+  border-color: rgb(255 255 255 / 25%) !important;
+}
+.cc-btn:is(.cc-btn-primary, .cc-btn-secondary).cc-fill-fill :is(svg, [data-rsp-slot='text']) {
+  color: var(--foreground) !important;
+}
+/* Destructive: a 15% red fill with red ink, never a solid red slab. */
+.cc-btn.cc-btn-negative.cc-fill-fill {
+  background-color: color-mix(in oklab, var(--destructive) 15%, transparent) !important;
+  border: 1px solid transparent !important;
+  color: var(--destructive) !important;
+  --iconPrimary: var(--destructive);
+}
+.cc-btn.cc-btn-negative.cc-fill-fill:is([data-hovered], :hover) {
+  background-color: color-mix(in oklab, var(--destructive) 25%, transparent) !important;
+}
+.cc-btn:is([data-disabled], :disabled) {
+  opacity: 0.5;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cc-btn:is([data-pressed]) {
+    scale: 0.96;
+  }
+}
+
+/* Action buttons: ghost capsules (quiet) or thin-fill capsules; a selected toggle wears the control highlight. */
+.cc-action {
+  border-radius: 999px !important;
+}
+.cc-action:not(.cc-quiet) {
+  background-color: rgb(255 255 255 / 5%) !important;
+  border-color: rgb(255 255 255 / 12%) !important;
+  box-shadow: var(--control-highlight);
+}
+.cc-action:is([data-hovered], :hover):not([data-disabled]) {
+  background-color: rgb(255 255 255 / 10%) !important;
+}
+.cc-toggle[data-selected] {
+  background-color: rgb(255 255 255 / 14%) !important;
+  color: var(--foreground) !important;
+  box-shadow: var(--control-highlight) !important;
+  --iconPrimary: var(--foreground);
+}
+
+/* Fields are recessed. */
+[data-cc-field],
+input[class]:not([type='checkbox']):not([type='radio']):not([type='range']):not([data-cc] *) {
+  caret-color: var(--primary);
+}
+
+/* Focus rings are the yellow ring at 50%. */
+:focus-visible {
+  outline-color: color-mix(in oklab, var(--ring), transparent 20%);
+}
+
+/* Selection uses the accent at low alpha. */
+::selection {
+  background: color-mix(in oklab, var(--primary) 35%, transparent);
+  color: var(--foreground);
+}
+
+/* Floating surfaces (menus, pickers, popovers, tooltips): the glass tint and elevation tokens. */
+[role='dialog'][data-cc-popover],
+.cc-glass-popover {
+  background-image: linear-gradient(var(--glass-tint-strong), var(--glass-tint-strong));
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.6);
+  box-shadow: var(--glass-shadow-raised);
+}

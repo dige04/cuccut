@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const de: MusicLocalMessages = {
+  defaultDesc: "Beim Erzeugen von Musik vorausgewählt. Ohne Standard wählen Sie das Modell selbst; manuelle Auswahl hat immer Vorrang.",
+  cloudDefault: (name) => `Standard ist ${name}; ein hier gewähltes lokales Modell ersetzt es.`,
+  noInstalled: "Noch kein Musikmodell installiert. Zuerst eines unten herunterladen.",
+  licenseUse: "Damit erzeugte Musik darf ebenfalls nur in nichtkommerziellen Inhalten verwendet werden; für kommerziell geplante Videos andere Musik verwenden.",
+  style: "Stil",
+  mode: "Form",
+  note: (seconds, steps, eta) => `Die Vorschau ist fest auf ${seconds} s${steps !== null ? ` und ${steps} Schritte` : ''} eingestellt, ohne Planung; sie prüft nur, ob dieses Modell und seine Musik-Engine Klang erzeugen können. ${eta}.`,
+  songNote: "Ein Song verwendet einen kurzen eingebauten Beispieltext.",
+  toolNote: "Für einen echten Soundtrack Werkzeuge › Musik erzeugen verwenden.",
+  openTool: "Musik erzeugen öffnen",
+  generate: "Vorschau erzeugen",
+  again: "Erneut erzeugen",
+  cancel: "Abbrechen",
+  busy: "Wird erzeugt…",
+  stalePrefix: "Vorherige · ",
+  stale: "Dieser Clip entstand mit Ihrer vorherigen Auswahl. Nach Änderung von Stil oder Form auf „Vorschau erzeugen“ klicken, um die neue Aufnahme zu hören.",
+  download: "Herunterladen",
+  resultLabel: "Vorschauergebnis",
+  loadingAudio: "Audio wird geladen…",
+  audioFailed: (message) => `Audio konnte nicht geladen werden: ${message}`,
+  downloadFailed: (message) => `Herunterladen fehlgeschlagen: ${message}`,
+  fileName: (name) => `${name} Vorschau.wav`,
+};

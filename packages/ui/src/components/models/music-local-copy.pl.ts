@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const pl: MusicLocalMessages = {
+  defaultDesc: "Wstępnie wybrane przy generowaniu muzyki. Bez modelu domyślnego wybierasz model sam; ręczny wybór ma pierwszeństwo.",
+  cloudDefault: (name) => `Domyślny jest ${name}; wybranie tutaj modelu lokalnego go zastąpi.`,
+  noInstalled: "Nie zainstalowano jeszcze modelu muzyki. Najpierw pobierz go poniżej.",
+  licenseUse: "Wygenerowaną nim muzykę również można używać tylko niekomercyjnie; do komercyjnych wideo użyj innej muzyki.",
+  style: "Styl",
+  mode: "Forma",
+  note: (seconds, steps, eta) => `Podgląd ma stałe parametry: ${seconds} s${steps !== null ? `, ${steps} kroków` : ''}, bez planowania; sprawdza tylko, czy ten model i jego silnik muzyczny potrafią wydać dźwięk. ${eta}.`,
+  songNote: "Piosenka używa krótkiego wbudowanego tekstu przykładowego.",
+  toolNote: "Do prawdziwej ścieżki dźwiękowej użyj Narzędzia › Wygeneruj muzykę.",
+  openTool: "Otwórz Wygeneruj muzykę",
+  generate: "Generuj podgląd",
+  again: "Generuj ponownie",
+  cancel: "Anuluj",
+  busy: "Generowanie…",
+  stalePrefix: "Poprzedni · ",
+  stale: "Klip powstał z poprzednimi wyborami. Po zmianie stylu lub formy kliknij „Generuj podgląd”, aby usłyszeć nowy.",
+  download: "Pobierz",
+  resultLabel: "Wynik podglądu",
+  loadingAudio: "Wczytywanie audio…",
+  audioFailed: (message) => `Nie udało się wczytać audio: ${message}`,
+  downloadFailed: (message) => `Nie udało się pobrać: ${message}`,
+  fileName: (name) => `Podgląd ${name}.wav`,
+};

@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const tr: MusicLocalMessages = {
+  defaultDesc: 'Müzik oluştururken önceden seçilir. Varsayılan yoksa modeli kendiniz seçersiniz; elle yapılan seçim her zaman önceliklidir.',
+  cloudDefault: (name) => `Varsayılan ${name}; burada yerel bir model seçmek onun yerine geçer.`,
+  noInstalled: 'Henüz yüklü müzik modeli yok. Önce aşağıdan bir model indirin.',
+  licenseUse: 'Bu modelle oluşturulan müzik de yalnızca ticari olmayan içerikte kullanılabilir; ticari kullanım planladığınız videolar için başka bir müzik kullanın.',
+  style: 'Stil',
+  mode: 'Biçim',
+  note: (seconds, steps, eta) => `Önizleme ${seconds} sn${steps !== null ? ` ve ${steps} adım` : ''} olarak sabittir, önceden planlama yapılmaz; yalnızca bu modelin ve müzik motorunun ses üretip üretemediğini denetler. ${eta}.`,
+  songNote: 'Şarkı, yerleşik kısa bir örnek söz kullanır.',
+  toolNote: 'Gerçek bir film müziği için Araçlar › Müzik oluştur bölümünü kullanın.',
+  openTool: 'Müzik oluştur’u aç',
+  generate: 'Önizleme oluştur',
+  again: 'Yeniden oluştur',
+  cancel: 'İptal',
+  busy: 'Oluşturuluyor…',
+  stalePrefix: 'Önceki · ',
+  stale: 'Bu klip önceki seçimlerinizle yapıldı. Stil veya biçimi değiştirince yenisini duymak için “Önizleme oluştur” tıklayın.',
+  download: 'İndir',
+  resultLabel: 'Önizleme sonucu',
+  loadingAudio: 'Ses yükleniyor…',
+  audioFailed: (message) => `Ses yüklenemedi: ${message}`,
+  downloadFailed: (message) => `İndirilemedi: ${message}`,
+  fileName: (name) => `${name} önizleme.wav`,
+};

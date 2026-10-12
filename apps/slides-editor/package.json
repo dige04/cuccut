@@ -1,0 +1,18 @@
+{
+  "name": "@cuccut/slides-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Slides editor page served by the Runtime, built from @cuccut/slides-runtime",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@cuccut/slides": "*",
+    "@cuccut/slides-runtime": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12",
+    "vite": "^7.3.6"
+  }
+}

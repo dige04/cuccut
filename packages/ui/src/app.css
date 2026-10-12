@@ -1,0 +1,674 @@
+/* 少数 style 宏表达不了的规则：窗口拖动区与滚动条。颜色与字号走 S2 的宏。 */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.cc-drag {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.cc-drag button,
+.cc-drag a,
+.cc-drag input,
+.cc-drag [role='button'],
+.cc-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* 滚动条平时透明，指针移进滚动区才显示（原型 ui.css `.cc-scroll`）；轨道宽度一直保留，显隐不挤动内容。 */
+.cc-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.cc-scroll:hover {
+  scrollbar-color: light-dark(rgb(0 0 0 / 0.2), rgb(255 255 255 / 0.2)) transparent;
+}
+
+/*
+ * 页面侧栏的行（产品设计 §3.1 用户修订）：整行底色表达当前页与 hover，替换 S2 SideNav 的指示条；
+ * 没有子项的行去掉展开钮占的空位。S2 1.7 的内容网格第一个子元素是指示条，后面是缩进与链接。
+ * 颜色变量由 PageSidebar 给（style 宏里的 S2 token）。
+ */
+[data-cc-row] {
+  border-radius: 8px;
+  margin-top: 4px;
+}
+[data-cc-row][data-hovered] {
+  background-color: var(--cc-row-hover);
+}
+[data-cc-row][data-current] {
+  background-color: var(--cc-row-current);
+}
+[data-cc-row] > [role='gridcell'] > div:has(> a) > div:first-child {
+  display: none;
+}
+[data-cc-row]:not([data-cc-expandable]) > [role='gridcell'] > [slot='chevron'] {
+  display: none;
+}
+/*
+ * 行里的图标与文字：S2 按行框把两者居中，文字的字形中心比行框中心低约 1 px（中文与拉丁大写都是），
+ * 看起来文字比图标低。文字上移 1 px 对齐到图标中心。
+ */
+[data-cc-row] a > [data-rsp-slot='text'] {
+  position: relative;
+  top: -1px;
+}
+
+/*
+ * 行尾与段头的操作（项目菜单、会话的置顶与归档、段头的整理与新建）：悬停或键盘聚焦时才出现；
+ * 用透明度藏起来，它们仍在 Tab 序里。展开钮同理；触屏上一直显示。
+ * 项目行的 ActionMenu 不接 UNSAFE_className，按它的菜单按钮来选。
+ */
+.cc-row-actions,
+[data-cc-expandable] button[aria-haspopup] {
+  opacity: 0;
+  pointer-events: none;
+  max-width: 0;
+  min-width: 0;
+  overflow: hidden;
+  margin-inline: 0;
+}
+:is([data-cc-row], [data-cc-expandable]):is(:hover, :focus-within) :is(.cc-row-actions, button[aria-haspopup]),
+:is([data-cc-row], [data-cc-expandable]):has([aria-expanded='true'][aria-haspopup]) :is(.cc-row-actions, button[aria-haspopup]) {
+  opacity: 1;
+  pointer-events: auto;
+  max-width: 64px;
+  overflow: visible;
+}
+[data-cc-expandable] > [role='gridcell'] > [slot='chevron'] {
+  opacity: 0;
+}
+[data-cc-expandable]:is(:hover, :focus-within) > [role='gridcell'] > [slot='chevron'] {
+  opacity: 1;
+}
+[data-cc-row] > [role='gridcell'] > div:has(> a) {
+  padding-inline-end: 12px;
+}
+.cc-section-chevron {
+  display: inline-flex;
+  opacity: 0;
+}
+.cc-section-chevron svg {
+  width: 12px;
+  height: 12px;
+}
+.cc-section-actions {
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+}
+.cc-section-head:is(:hover, :focus-within) :is(.cc-section-actions, .cc-section-chevron),
+.cc-section-head:has(.cc-section-actions [aria-expanded='true']) :is(.cc-section-actions, .cc-section-chevron),
+.cc-section-toggle[aria-expanded='false'] .cc-section-chevron {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .cc-row-actions,
+  [data-cc-expandable] button[aria-haspopup],
+  .cc-section-actions,
+  .cc-section-chevron,
+  [data-cc-expandable] > [role='gridcell'] > [slot='chevron'] {
+    opacity: 1;
+    pointer-events: auto;
+    max-width: none;
+    overflow: visible;
+  }
+}
+
+/* 新会话起始页（原型 new-project.css `.home-create`）：输入框正文至少三行高。 */
+[data-composer-start] [contenteditable] {
+  min-height: 80px;
+}
+
+/* S2 PromptField 始终生成提示段落；起始页没有提示（`aiDisclaimer` 是空的），空段落不占位。它若留着，盖在项目托盘上面的输入框
+   （z-index 1）底下会多出 24px 透明的一条，挡住托盘里的项目按钮（原型 new-project.css 同一条规则）。 */
+[data-composer-start] p:empty {
+  display: none;
+}
+
+/*
+ * Workflow 图标的画布（产品设计 §2.1）：只有应用 Rail 用 20px；Rail 以外正文、页面侧栏、菜单、弹层、对话框与标题栏里的
+ * workflow 图标一律 16px。按 S2 workflow 图标的特征（role=img、20×20 viewBox）匹配，不靠逐个容器声明；S2 的 UI 图形
+ * （viewBox 更小）、插画、缩略图与画面内容不受影响。S2 的样式在 cascade layer 里，这里不分层，所以连 iconStyle 写死的
+ * 尺寸也会被改成 16——要保留自己尺寸的在图标或其容器上标 `data-cc-icons="own"`（标签关闭等 14px 的 UI 图形、空态与
+ * 结果的大图形、编辑器里的小角标、画面与 Space 类型预览）。图标块（32–48px 底块里的标识）用 `data-cc-icons="primary"`，
+ * 和 Rail 一样 20px。
+ */
+:root {
+  --cc-icon-primary: 20px;
+  --cc-icon-compact: 16px;
+}
+svg[role='img'][viewBox='0 0 20 20']:not(
+    :where([data-cc-icons='primary'] svg, [data-cc-icons='own'], [data-cc-icons='own'] svg, .cc-section-chevron svg)
+  ) {
+  width: var(--cc-icon-compact);
+  height: var(--cc-icon-compact);
+  flex-shrink: 0;
+}
+[data-cc-icons='primary'] svg[role='img'][viewBox='0 0 20 20']:not(:where([data-cc-icons='own'], [data-cc-icons='own'] svg)) {
+  width: var(--cc-icon-primary);
+  height: var(--cc-icon-primary);
+  flex-shrink: 0;
+}
+
+/*
+ * 外壳按钮（components/shell-button.tsx；原型 home-shell-chrome.css）：32×32 的安静按钮，图形（.cc-shell-icon）16×16 居中；
+ * 标签页列表的行尾按钮 24×24。S2 的按钮是网格、图形跟字号走，这里不分层，直接盖过去。按下态的底色变量由 ShellButton 给。
+ */
+.cc-shell-anchor {
+  display: inline-flex;
+}
+.cc-shell-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.cc-shell-button.cc-shell-button-small {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+}
+/* 外壳图形（components/shell-icons.tsx）：SVG 当遮罩，填 currentColor。 */
+.cc-shell-icon {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+}
+.cc-shell-button[aria-pressed='true'] {
+  background-color: var(--cc-shell-pressed);
+}
+/* 标签页按钮的图形：外框中间叠加号（同为 20 网格、与外框同尺寸）或标签页数（10px，两位以上缩到 0.75）。 */
+.cc-tabstack {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.cc-tabstack-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.cc-tabstack-count {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cc-tabstack-count.cc-tabstack-wide {
+  transform: scale(0.75);
+  letter-spacing: -0.5px;
+}
+
+/*
+ * 模板封面（components/start/template-cover.tsx；原型 home-templates.css）：画进视频画面的内容。
+ * 颜色由组件给（style 宏的 S2 token）；这里只有几何：统一的 16:10 格子里按模板的画幅放一帧，
+ * --u 是画面里图形的单位，跟着尺寸档走。
+ */
+.cc-tpl-cover {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 8px;
+  --u: 6px;
+}
+.cc-tpl-cover[data-size='lg'] {
+  border-radius: 10px;
+  --u: 10px;
+}
+.cc-tpl-cover[data-size='xs'] {
+  flex: none;
+  width: 24px;
+  height: 16px;
+  aspect-ratio: auto;
+  border-radius: 4px;
+  --u: 2px;
+}
+.cc-tpl-art {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: hidden;
+  padding: calc(var(--u) * 2);
+  text-align: start;
+}
+.cc-tpl-art[data-ratio='16:9'] {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+.cc-tpl-art[data-ratio='9:16'] {
+  aspect-ratio: 9 / 16;
+}
+.cc-tpl-art[data-ratio='1:1'] {
+  aspect-ratio: 1 / 1;
+}
+.cc-tpl-cover[data-size='md'] .cc-tpl-art[data-ratio='9:16'] {
+  padding: var(--u);
+}
+.cc-tpl-cover[data-size='xs'] .cc-tpl-art {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  padding: 0;
+}
+.cc-tpl-art__kicker {
+  position: relative;
+  font-size: 10px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cc-tpl-art__word {
+  position: relative;
+  margin-top: auto;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.cc-tpl-art__line {
+  width: calc(var(--u) * 4);
+  height: 2px;
+  margin-top: 4px;
+  background: currentColor;
+}
+.cc-tpl-cover[data-size='lg'] .cc-tpl-art__kicker {
+  font-size: 12px;
+}
+.cc-tpl-cover[data-size='lg'] .cc-tpl-art__word {
+  font-size: 22px;
+}
+.cc-tpl-art:not([data-ratio='16:9']) .cc-tpl-art__word {
+  font-size: 11px;
+}
+.cc-tpl-cover[data-size='lg'] .cc-tpl-art:not([data-ratio='16:9']) .cc-tpl-art__word {
+  font-size: 16px;
+}
+.cc-tpl-art__fig {
+  position: absolute;
+  inset-inline-end: calc(var(--u) * 2);
+  top: calc(var(--u) * 2);
+  display: flex;
+  opacity: 0.28;
+}
+.cc-tpl-art__fig i {
+  display: block;
+  background: currentColor;
+}
+.cc-tpl-art__fig[data-fig='bars'] {
+  align-items: flex-end;
+  gap: var(--u);
+  height: calc(var(--u) * 7);
+}
+.cc-tpl-art__fig[data-fig='bars'] i {
+  width: calc(var(--u) * 2);
+  height: 40%;
+}
+.cc-tpl-art__fig[data-fig='bars'] i:nth-child(2) {
+  height: 70%;
+}
+.cc-tpl-art__fig[data-fig='bars'] i:nth-child(3) {
+  height: 55%;
+}
+.cc-tpl-art__fig[data-fig='bars'] i:nth-child(4) {
+  height: 100%;
+}
+.cc-tpl-art__fig[data-fig='ring'] i,
+.cc-tpl-art__fig[data-fig='cards'] i {
+  display: none;
+}
+.cc-tpl-art__fig[data-fig='ring'] i:first-child {
+  display: block;
+  width: calc(var(--u) * 6);
+  height: calc(var(--u) * 6);
+  border-radius: 9999px;
+  background: transparent;
+  border: var(--u) solid currentColor;
+}
+.cc-tpl-art__fig[data-fig='cards'] i {
+  width: calc(var(--u) * 5);
+  height: calc(var(--u) * 6);
+  border-radius: var(--u);
+}
+.cc-tpl-art__fig[data-fig='cards'] i:first-child {
+  display: block;
+  transform: rotate(-10deg);
+}
+.cc-tpl-art__fig[data-fig='cards'] i:nth-child(2) {
+  display: block;
+  margin-inline-start: calc(var(--u) * -2);
+  transform: rotate(8deg);
+  opacity: 0.6;
+}
+.cc-tpl-art__fig[data-fig='steps'] {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--u);
+}
+.cc-tpl-art__fig[data-fig='steps'] i {
+  width: calc(var(--u) * 9);
+  height: var(--u);
+}
+.cc-tpl-art__fig[data-fig='steps'] i:nth-child(2) {
+  width: calc(var(--u) * 6);
+}
+.cc-tpl-art__fig[data-fig='steps'] i:nth-child(3) {
+  width: calc(var(--u) * 8);
+}
+.cc-tpl-art__fig[data-fig='steps'] i:nth-child(4) {
+  width: calc(var(--u) * 4);
+}
+.cc-tpl-cover[data-size='xs'] .cc-tpl-art__fig {
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+}
+.cc-tpl-cover[data-size='xs'] .cc-tpl-art__fig[data-fig='bars'] {
+  align-items: flex-end;
+  height: auto;
+  padding: 4px;
+  gap: 1px;
+}
+/* 封面图与预览视频（清单 cover.file / preview.file）：盖在占位封面上，加载前与失败时看到的是占位。 */
+.cc-tpl-cover__image,
+.cc-tpl-cover__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.cc-tpl-cover__image {
+  object-fit: cover;
+}
+.cc-tpl-cover__video {
+  object-fit: contain;
+  background: #000;
+}
+
+/*
+ * 起始页「快捷开始」卡片（components/start/home-starters.tsx；原型 new-project.css .home-quick）：
+ * 色系由深到浅的底，正中一块小屏，屏里按这件事画几笔。颜色变量（--cc-quick-*）由组件给（style 宏里的 S2 token），这里只有几何。
+ */
+.cc-quick-card {
+  transition:
+    background-color 150ms cubic-bezier(0.45, 0, 0.4, 1),
+    transform 150ms cubic-bezier(0.45, 0, 0.4, 1);
+}
+.cc-quick-card:active {
+  transform: scale(0.96);
+}
+.cc-quick-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--cc-quick-300), var(--cc-quick-200));
+}
+.cc-quick-screen {
+  display: flex;
+  box-sizing: border-box;
+  width: 58%;
+  aspect-ratio: 16 / 10;
+  padding: 8px;
+  gap: 4px;
+  border: 1px solid var(--cc-quick-400);
+  border-radius: 8px;
+  background: var(--cc-quick-screen);
+  transition: transform 150ms cubic-bezier(0.45, 0, 0.4, 1);
+}
+.cc-quick-card:hover .cc-quick-screen {
+  transform: scale(1.04);
+}
+.cc-quick-screen i {
+  display: block;
+  flex: none;
+  border-radius: 4px;
+  background: var(--cc-quick-1000);
+}
+/* 加字幕：上面是画面，下面两行字幕 */
+.cc-quick-screen[data-kind='sub'] {
+  flex-direction: column;
+  align-items: center;
+}
+.cc-quick-screen[data-kind='sub']::before {
+  content: '';
+  flex: 1;
+  align-self: stretch;
+  border-radius: 4px;
+  background: var(--cc-quick-200);
+}
+.cc-quick-screen[data-kind='sub'] i {
+  width: 72%;
+  height: 4px;
+}
+.cc-quick-screen[data-kind='sub'] i:nth-child(2) {
+  width: 48%;
+  background: var(--cc-quick-400);
+}
+/* 转录并翻译：原文（灰）与译文（色）一行对一行 */
+.cc-quick-screen[data-kind='trans'] {
+  flex-direction: column;
+  justify-content: center;
+}
+.cc-quick-screen[data-kind='trans'] i {
+  height: 4px;
+}
+.cc-quick-screen[data-kind='trans'] i:nth-child(odd) {
+  background: var(--cc-quick-mute);
+}
+.cc-quick-screen[data-kind='trans'] i:nth-child(1) {
+  width: 84%;
+}
+.cc-quick-screen[data-kind='trans'] i:nth-child(2) {
+  width: 64%;
+}
+.cc-quick-screen[data-kind='trans'] i:nth-child(3) {
+  width: 72%;
+  margin-top: 4px;
+}
+.cc-quick-screen[data-kind='trans'] i:nth-child(4) {
+  width: 52%;
+}
+/* 剪口播：一段波形，中间要剪掉的几拍是灰的；音频转视频：一张封面圆片配一段波形 */
+.cc-quick-screen[data-kind='clean'],
+.cc-quick-screen[data-kind='a2v'] {
+  align-items: center;
+  justify-content: center;
+}
+.cc-quick-screen[data-kind='clean'] i,
+.cc-quick-screen[data-kind='a2v'] i {
+  width: 4px;
+  height: 40%;
+}
+.cc-quick-screen[data-kind='clean'] i:nth-child(2),
+.cc-quick-screen[data-kind='a2v'] i:nth-child(3) {
+  height: 70%;
+}
+.cc-quick-screen[data-kind='clean'] i:nth-child(3),
+.cc-quick-screen[data-kind='a2v'] i:nth-child(5) {
+  height: 55%;
+}
+.cc-quick-screen[data-kind='clean'] i:nth-child(5),
+.cc-quick-screen[data-kind='a2v'] i:nth-child(6) {
+  height: 85%;
+}
+.cc-quick-screen[data-kind='clean'] i:nth-child(7) {
+  height: 60%;
+}
+.cc-quick-screen[data-kind='clean'] i:nth-child(8) {
+  height: 75%;
+}
+.cc-quick-screen[data-kind='clean'] i:nth-child(n + 4):nth-child(-n + 6) {
+  background: var(--cc-quick-mute);
+}
+.cc-quick-screen[data-kind='a2v'] i:first-child {
+  width: 20px;
+  height: 20px;
+  margin-inline-end: 4px;
+  border-radius: 9999px;
+}
+.cc-quick-screen[data-kind='a2v'] i:nth-child(n + 2) {
+  background: var(--cc-quick-400);
+}
+
+/*
+ * 「全部模板」弹窗的两栏（components/start/template-library.tsx；原型 home-templates.css .home-tpl）：
+ * 左边找，右边看；两栏各自滚动，弹窗高度不随翻页与换模板跳动。窄窗口叠成上下，整块一起滚。
+ * 分隔线的颜色变量由组件给（style 宏里的 S2 token）。
+ */
+.cc-tpl-library {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  height: min(70vh, 660px);
+  min-width: 0;
+}
+.cc-tpl-library__browse {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+.cc-tpl-library__list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 -6px;
+  padding: 2px 0;
+}
+.cc-tpl-library__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 4px;
+}
+.cc-tpl-library__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding-inline-start: 24px;
+  border-inline-start: 2px solid var(--cc-tpl-divider);
+}
+.cc-tpl-library__pane[data-empty] {
+  justify-content: center;
+}
+.cc-tpl-library__pane-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cc-tpl-library__pane-scroll > * {
+  flex: none;
+}
+@media (max-width: 860px) {
+  .cc-tpl-library {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+  /* 上下排时列表自己滚，详情不被九张卡片挤到很下面。 */
+  .cc-tpl-library__list {
+    flex: none;
+    max-height: 44vh;
+  }
+  .cc-tpl-library__pane-scroll {
+    overflow: visible;
+  }
+  .cc-tpl-library__pane {
+    padding-inline-start: 0;
+    padding-top: 16px;
+    border-inline-start: none;
+    border-top: 2px solid var(--cc-tpl-divider);
+  }
+}
+@media (max-width: 600px) {
+  .cc-tpl-library__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/*
+ * 输入区的提示（原型 spectrum.css `.cc-ai-prompt`）：PromptTokenField 的提示是 contenteditable 自己的 :empty::before，
+ * 继承正文色，聚焦时和已输入的文字一样深；降到 gray-500，和普通输入框的 placeholder 一致。颜色变量由 Composer 给（style 宏里的 S2 token）。
+ */
+[data-composer] [role='textbox'][data-placeholder]:empty::before {
+  color: var(--cc-prompt-placeholder);
+}
+
+/* 标签页列表的行尾按钮（components/workspace/workspace-view-controls.tsx；原型 home-shell-chrome.css）：行悬停或行内有焦点时才出现。 */
+.cc-tabs-row-full {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.45, 0, 0.4, 1);
+}
+.cc-tabs-row:is(:hover, :focus-within) .cc-tabs-row-full {
+  opacity: 1;
+}
+
+/*
+ * 侧栏浮出（components/shell-peek.tsx；原型 home-shell-chrome.css `.shell-side-peek`）：浮层里的侧栏撑满浮层高度；
+ * 浮层自己有边框，侧栏右沿的分隔线不画（S2 宏的逐边边框键会被丢，写在这里）。
+ */
+[data-shell-peek] > aside {
+  height: 100%;
+  border-inline-end-width: 0;
+}
+
+/*
+ * 页签悬停缩略卡（components/workspace/workspace-tab-preview.tsx；原型 `.shell-tab-preview*`）：缩略图区的底边分隔线；
+ * 面板的克隆按 960 × 600 排版，再整体缩到卡片宽（280 / 960）。分隔线颜色变量由组件给。
+ */
+.cc-tab-preview-image {
+  border-bottom: 1px solid var(--cc-tab-preview-line);
+}
+.cc-tab-preview-image > .cc-tab-preview-clone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  width: 960px;
+  height: 600px;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  overflow: hidden;
+  transform: scale(0.2916667);
+  transform-origin: top left;
+}

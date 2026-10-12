@@ -1,0 +1,14 @@
+{
+  "name": "@cuccut/slides",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./editor": "./src/editor/index.ts",
+    "./editor-messages": "./src/editor-messages.ts"
+  },
+  "dependencies": {
+    "@cuccut/protocol": "*"
+  }
+}

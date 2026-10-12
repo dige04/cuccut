@@ -1,0 +1,38 @@
+import type { ModelsLocalMessages } from './models-local-copy.ts';
+
+export const pl: ModelsLocalMessages = {
+  reason: {
+    unsupported: "Nieobsługiwane na tym komputerze",
+    resource: "Wyłączone",
+    'worker-missing': "Brak Model Worker",
+    'missing-manifest': "Brak manifestu",
+    'missing-file': "Brak plików",
+    'size-mismatch': "Niezgodny rozmiar pliku",
+    'hash-mismatch': "Niezgodna suma kontrolna",
+    incomplete: "Brak komponentów",
+    'load-failed': "Nie udało się wczytać",
+    relocating: "Przenoszenie",
+  },
+  chipDefault: "Domyślny",
+  chipLoading: "Wczytywanie",
+  chipReady: "Wczytano",
+  chipBusy: "W toku",
+  chipUnloading: "Zwalnianie",
+  chipUnavailable: "Niedostępne",
+  chipMissing: (names) => `Brak: ${names.join(', ')}`,
+  capability: {
+    transcribe: "Transkrybuj",
+    align: "Wyrównaj",
+    synthesize: "Syntezuj",
+    image: "Obraz",
+    separate: "Separacja",
+    music: 'Muzyka',
+    diarize: "Rozróżnianie mówców",
+  },
+  auto: "Automatycznie",
+  notInstalled: (name) => `${name} (niezainstalowany)`,
+  componentName: { 'audiocpp-engine': "Silnik audio.cpp", aligner: "Wymuszone dopasowanie", speaker: "Embedding mówcy", vad: "VAD (wykrywanie aktywności głosowej)", tokenizer: "Tokenizer", segmentation: "Segmentacja mówców", codec: "Kodek mowy", aux: "Modele pomocnicze" },
+  componentDesc: { 'audiocpp-engine': "Uruchamia YuE2 · pobierany zależnie od platformy · Windows / Linux wymagają sterownika GPU z Vulkan", vad: "Wyszukuje fragmenty, w których ktoś mówi", aligner: "Dopasowuje tekst do czasu każdego słowa", tokenizer: "Zamienia tekst na tokeny modelu i z powrotem", speaker: "Rozróżnia mówców", segmentation: "Wyszukuje, gdzie każda osoba zaczyna i kończy mówić", codec: "Zamienia tokeny akustyczne z powrotem w falę dźwiękową", aux: "Dodatkowe modele potrzebne modelowi głównemu" },
+  githubRelease: (repo, tag) => `Wydanie GitHub ${repo} ${tag}`,
+  weights: "Wagi modelu",
+};

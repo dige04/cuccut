@@ -1,0 +1,35 @@
+{
+  "name": "@cuccut/desktop",
+  "version": "3.4.1",
+  "private": true,
+  "description": "CucCut desktop app (Electron)",
+  "main": "out/main/index.js",
+  "scripts": {
+    "predev": "install-electron",
+    "dev": "node tools/dev-runner.mjs",
+    "build": "electron-vite build",
+    "prestart": "install-electron",
+    "start": "electron-vite preview"
+  },
+  "dependencies": {
+    "@cuccut/protocol": "*",
+    "@cuccut/runtime": "*",
+    "@cuccut/runtime-storage": "*",
+    "@cuccut/ui": "*",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@react-aria/optimize-locales-plugin": "^2.0.2",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "tailwindcss": "^4.3.3",
+    "unplugin-parcel-macros": "^0.2.0",
+    "vite": "^7.3.6"
+  }
+}

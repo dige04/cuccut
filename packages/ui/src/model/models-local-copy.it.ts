@@ -1,0 +1,38 @@
+import type { ModelsLocalMessages } from './models-local-copy.ts';
+
+export const it: ModelsLocalMessages = {
+  reason: {
+    unsupported: "Non supportato su questo computer",
+    resource: "Disattivato",
+    'worker-missing': "Model Worker mancante",
+    'missing-manifest': "Manifesto mancante",
+    'missing-file': "File mancanti",
+    'size-mismatch': "Dimensione del file non corrispondente",
+    'hash-mismatch': "Checksum non corrispondente",
+    incomplete: "Componenti mancanti",
+    'load-failed': "Impossibile caricare",
+    relocating: "Spostamento in corso",
+  },
+  chipDefault: "Predefinito",
+  chipLoading: "Caricamento in corso",
+  chipReady: "Caricato",
+  chipBusy: "In esecuzione",
+  chipUnloading: "Scaricamento dalla memoria in corso",
+  chipUnavailable: "Non disponibile",
+  chipMissing: (names) => `Manca: ${names.join(', ')}`,
+  capability: {
+    transcribe: "Trascrivi",
+    align: "Allinea",
+    synthesize: "Sintetizza",
+    image: "Immagine",
+    separate: "Separa",
+    music: 'Musica',
+    diarize: "Diarizzazione dei parlanti",
+  },
+  auto: "Automatico",
+  notInstalled: (name) => `${name} (non installato)`,
+  componentName: { 'audiocpp-engine': "Motore audio.cpp", aligner: "Allineatore forzato", speaker: "Embedding del parlante", vad: "VAD (rilevamento dell’attività vocale)", tokenizer: "Tokenizzatore", segmentation: "Segmentazione dei parlanti", codec: "Codec vocale", aux: "Modelli ausiliari" },
+  componentDesc: { 'audiocpp-engine': "Esegue YuE2 · scaricato in base alla piattaforma · Windows / Linux richiedono un driver GPU Vulkan", vad: "Individua i tratti in cui qualcuno parla", aligner: "Allinea il testo ai tempi di ogni parola", tokenizer: "Converte tra il testo e i token del modello", speaker: "Distingue i parlanti", segmentation: "Individua dove ogni persona inizia e smette di parlare", codec: "Riconverte i token acustici in forma d’onda", aux: "Modelli aggiuntivi richiesti dal modello principale" },
+  githubRelease: (repo, tag) => `Release GitHub ${repo} ${tag}`,
+  weights: "Pesi del modello",
+};

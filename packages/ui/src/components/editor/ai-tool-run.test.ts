@@ -1,0 +1,230 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RpcError, type AiToolSummary, type JobRecord, type TransactionReceipt, type UndoTarget } from '@cuccut/protocol';
+import { toolDraftKey } from '../../model/ai-tools.ts';
+import { useJobs } from '../../state/jobs-store.ts';
+import {
+  attachAiToolSkill,
+  bindAiToolRun,
+  closeAiToolResult,
+  detachAiToolSkill,
+  resetAiToolRun,
+  restoreAiToolPrompt,
+  retryAiTool,
+  setAiToolPrompt,
+  setAiToolSkills,
+  runKey,
+  startAiTool,
+  undoAiTool,
+  useAiToolPrompts,
+  useAiToolRun,
+  useAiToolSkills,
+  type AiToolRunDeps,
+} from './ai-tool-run.ts';
+
+const context = { paragraphs: 3, characters: 120, chapters: 0, attachments: 0, skippedAttachments: 0, skills: [], references: 0 };
+const textSummary: AiToolSummary = {
+  videoId: 'vid',
+  tool: 'summary',
+  providerId: 'openai',
+  modelId: 'gpt-5-mini',
+  context,
+  applied: null,
+  text: '# Summary\n\n- point',
+  artifactId: 'art_1',
+  finishReason: 'stop',
+};
+const polishSummary: AiToolSummary = { ...textSummary, tool: 'polish', applied: { transactionId: 'tx_apply', changes: 4 }, text: null };
+
+function job(jobId: string, state: JobRecord['state'], summary: AiToolSummary | null = null, extra: Partial<JobRecord> = {}): JobRecord {
+  return {
+    jobId,
+    kind: 'pipeline',
+    state,
+    phase: state === 'completed' ? 'done' : 'starting',
+    progress: null,
+    videoId: 'vid',
+    updatedAt: 'u1',
+    endedAt: state === 'running' || state === 'queued' ? null : 'e1',
+    error: null,
+    pipeline: {
+      name: 'ai-tool',
+      params: { videoId: 'vid' },
+      steps: [],
+      current: null,
+      stoppedAt: null,
+      summary: state === 'completed' ? (summary as unknown as Record<string, unknown>) : null,
+    },
+    ...extra,
+  } as JobRecord;
+}
+
+function fake(start?: () => Promise<string>) {
+  const toasts: string[] = [];
+  const undone: UndoTarget[] = [];
+  let next = 0;
+  const deps = {
+    runtime: {
+      startPipeline: vi.fn(start ?? (async () => `p${++next}`)),
+      retryPipeline: vi.fn(async () => {}),
+      cancelJob: vi.fn(async () => {}),
+      videos: {
+        undo: vi.fn(async (target: UndoTarget) => {
+          undone.push(target);
+          return { transactionId: 'tx_undo', undo: { available: true } } as unknown as TransactionReceipt;
+        }),
+      },
+    },
+    toast: (_kind: string, message: string) => {
+      toasts.push(message);
+    },
+  } satisfies AiToolRunDeps;
+  bindAiToolRun(deps);
+  return { deps, toasts, undone };
+}
+
+beforeEach(() => {
+  resetAiToolRun();
+  useJobs.setState({ ready: true, jobs: [] });
+});
+
+afterEach(() => resetAiToolRun());
+
+describe('直接调模型的运行', () => {
+  it('提交 ai-tool 流程；只给结果的工具完成时留正文，不写视频', async () => {
+    const { deps } = fake();
+    const key = runKey('vid', 'summary');
+    expect(await startAiTool({ videoId: 'vid', tool: 'summary', prompt: 'Summarize' }, 'gpt-5-mini')).toBe(true);
+    expect(deps.runtime.startPipeline).toHaveBeenCalledWith('ai-tool', { videoId: 'vid', tool: 'summary', prompt: 'Summarize' });
+    expect(useAiToolRun.getState().runs[key]).toMatchObject({ jobId: 'p1', status: 'running', model: 'gpt-5-mini' });
+    // 同一个工具同时只跑一次；别的工具照跑。
+    expect(await startAiTool({ videoId: 'vid', tool: 'summary', prompt: 'again' }, 'gpt-5-mini')).toBe(false);
+    expect(await startAiTool({ videoId: 'vid', tool: 'blog', prompt: 'Blog' }, 'gpt-5-mini')).toBe(true);
+    useJobs.setState({ jobs: [job('p1', 'running')] });
+    expect(useAiToolRun.getState().runs[key]).toBeDefined();
+    useJobs.setState({ jobs: [job('p1', 'completed', textSummary)] });
+    expect(useAiToolRun.getState().runs[key]).toBeUndefined();
+    expect(useAiToolRun.getState().results[key]?.summary.text).toBe('# Summary\n\n- point');
+    expect(useAiToolRun.getState().receipts[key]).toBeUndefined();
+    closeAiToolResult(key);
+    expect(useAiToolRun.getState().results[key]).toBeUndefined();
+  });
+
+  it('写进视频的工具：收据带那笔事务，撤销一次', async () => {
+    const { undone, toasts } = fake();
+    const key = runKey('vid', 'polish');
+    await startAiTool({ videoId: 'vid', tool: 'polish', prompt: 'Polish' }, 'gpt-5-mini');
+    useJobs.setState({ jobs: [job('p1', 'completed', polishSummary)] });
+    expect(useAiToolRun.getState().receipts[key]).toMatchObject({ transactionId: 'tx_apply', undone: false });
+    await undoAiTool(key);
+    expect(undone).toEqual([{ transaction: 'tx_apply' }]);
+    expect(useAiToolRun.getState().receipts[key]).toMatchObject({ undone: true, busy: false });
+    await undoAiTool(key);
+    expect(undone).toHaveLength(1);
+    expect(toasts).toEqual([]);
+    // 收据关掉之后列表仍知道那一次撤销过。
+    closeAiToolResult(key);
+    expect(useAiToolRun.getState().undoneJobs).toEqual({ p1: true });
+  });
+
+  it('提交被拒（没配文本模型）：问题卡带原因，不留运行', async () => {
+    fake(async () => {
+      throw new RpcError('invalid-request', 'No text model', { code: 'CAPABILITY_NOT_CONFIGURED' });
+    });
+    const key = runKey('vid', 'title');
+    expect(await startAiTool({ videoId: 'vid', tool: 'title', prompt: 'Titles' }, 'm')).toBe(false);
+    expect(useAiToolRun.getState().runs[key]).toBeUndefined();
+    expect(useAiToolRun.getState().problems[key]).toMatchObject({ message: 'No text model', retryJobId: null });
+  });
+
+  it('失败给原因与重试（同一个任务）；取消只提示', async () => {
+    const { deps, toasts } = fake();
+    const key = runKey('vid', 'chapters');
+    await startAiTool({ videoId: 'vid', tool: 'chapters', prompt: 'Chapters' }, 'gpt-5-mini');
+    useJobs.setState({ jobs: [job('p1', 'failed', null, { error: { code: 'MODEL_OUTPUT_INVALID', message: 'bad output' } as JobRecord['error'] })] });
+    expect(useAiToolRun.getState().problems[key]).toMatchObject({ message: 'bad output', retryJobId: 'p1', tool: 'chapters' });
+    await retryAiTool(key);
+    expect(deps.runtime.retryPipeline).toHaveBeenCalledWith('p1');
+    // 镜像里还是那条失败的记录：不收尾。
+    useJobs.setState({ jobs: [job('p1', 'failed', null, { error: { code: 'X', message: 'x' } as JobRecord['error'] })] });
+    expect(useAiToolRun.getState().runs[key]).toBeDefined();
+    useJobs.setState({ jobs: [job('p1', 'cancelled', null, { updatedAt: 'u2' })] });
+    expect(useAiToolRun.getState().runs[key]).toBeUndefined();
+    expect(useAiToolRun.getState().problems[key]).toBeUndefined();
+    expect(toasts).toHaveLength(1);
+  });
+});
+
+describe('提示词框里改过的字', () => {
+  const draftKey = toolDraftKey('vid', 'summary');
+  const template = 'Summarize this video.';
+  const edited = () => useAiToolPrompts.getState().prompts[draftKey];
+
+  it('跑完、结果页「完成」之后还在；改回模板与「恢复默认」才回到模板', async () => {
+    fake();
+    setAiToolPrompt(draftKey, 'Summarize in three bullets.', template);
+    const key = runKey('vid', 'summary');
+    await startAiTool({ videoId: 'vid', tool: 'summary', prompt: 'Summarize in three bullets.' }, 'gpt-5-mini');
+    useJobs.setState({ jobs: [job('p1', 'completed', textSummary)] });
+    expect(useAiToolRun.getState().results[key]).toBeDefined();
+    closeAiToolResult(key);
+    expect(edited()).toBe('Summarize in three bullets.');
+
+    setAiToolPrompt(draftKey, template, template);
+    expect(edited()).toBeUndefined();
+    setAiToolPrompt(draftKey, '', template);
+    expect(edited()).toBe('');
+    restoreAiToolPrompt(draftKey);
+    expect(edited()).toBeUndefined();
+  });
+
+  it('按「视频 · 工具」分开存', () => {
+    setAiToolPrompt(draftKey, 'A', template);
+    setAiToolPrompt(toolDraftKey('vid', 'blog'), 'B', template);
+    setAiToolPrompt(toolDraftKey('other', 'summary'), 'C', template);
+    expect(useAiToolPrompts.getState().prompts).toEqual({ [draftKey]: 'A', 'aitool:vid:blog': 'B', 'aitool:other:summary': 'C' });
+  });
+});
+
+describe('提示词框上挂着的 skill', () => {
+  const draftKey = toolDraftKey('vid', 'summary');
+  const defaults = ['video-summary'];
+  const stored = () => useAiToolSkills.getState().skills[draftKey];
+
+  it('摘掉内置的、跑完、结果页「完成」之后还摘着；加回成缺省那一份就不再存', async () => {
+    fake();
+    detachAiToolSkill(draftKey, 'video-summary', defaults);
+    expect(stored()).toEqual([]);
+    const key = runKey('vid', 'summary');
+    await startAiTool({ videoId: 'vid', tool: 'summary', prompt: 'Summarize.' }, 'gpt-5-mini');
+    useJobs.setState({ jobs: [job('p1', 'completed', textSummary)] });
+    expect(useAiToolRun.getState().results[key]).toBeDefined();
+    closeAiToolResult(key);
+    expect(stored()).toEqual([]);
+
+    attachAiToolSkill(draftKey, 'video-summary', defaults);
+    expect(stored()).toBeUndefined();
+    expect(useAiToolSkills.getState().skills).toEqual({});
+  });
+
+  it('接在后面、不重复；加回内置的也接在后面', () => {
+    attachAiToolSkill(draftKey, 'house-style', defaults);
+    attachAiToolSkill(draftKey, 'house-style', defaults);
+    expect(stored()).toEqual(['video-summary', 'house-style']);
+    detachAiToolSkill(draftKey, 'video-summary', defaults);
+    attachAiToolSkill(draftKey, 'video-summary', defaults);
+    expect(stored()).toEqual(['house-style', 'video-summary']);
+    setAiToolSkills(draftKey, defaults, defaults);
+    expect(stored()).toBeUndefined();
+  });
+
+  it('按「视频 · 工具」分开存', () => {
+    attachAiToolSkill(draftKey, 'a', defaults);
+    detachAiToolSkill(toolDraftKey('vid', 'blog'), 'video-blog', ['video-blog']);
+    attachAiToolSkill(toolDraftKey('other', 'summary'), 'c', defaults);
+    expect(useAiToolSkills.getState().skills).toEqual({
+      [draftKey]: ['video-summary', 'a'],
+      'aitool:vid:blog': [],
+      'aitool:other:summary': ['video-summary', 'c'],
+    });
+  });
+});

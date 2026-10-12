@@ -1,0 +1,523 @@
+/*
+ * Agent 会话线程的回复正文、工具步骤行与回合页脚（产品设计 §3.2.2）。style 宏表达不了的规则在这里：
+ * Markdown 生成的元素、扫光动画、diff 的逐行底色、hover 才出的复制按钮。颜色变量由线程列给（thread.tsx 的 S2 token）。
+ */
+
+/* ---------- 回复正文 ---------- */
+.cc-amd {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--cc-at-text);
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.cc-amd-block > * + * {
+  margin-top: 8px;
+}
+/* 段落里的单个换行保留成换行。 */
+.cc-amd p {
+  margin: 0;
+  white-space: pre-line;
+}
+.cc-amd strong {
+  font-weight: 600;
+}
+.cc-amd a:not(.cc-amd-settings) {
+  color: var(--cc-at-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cc-amd a:not(.cc-amd-settings):hover {
+  color: var(--cc-at-link-hover);
+}
+.cc-amd-settings > svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin-inline-end: 4px;
+}
+.cc-amd hr {
+  border: 0;
+  border-top: 1px solid var(--cc-at-line);
+  margin: 0;
+}
+.cc-amd :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  font-weight: 700;
+  color: var(--cc-at-heading);
+  line-height: 1.4;
+}
+.cc-amd :is(h1, h2) {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--cc-at-line);
+}
+.cc-amd h1 {
+  font-size: 18px;
+}
+.cc-amd h2 {
+  font-size: 16px;
+}
+.cc-amd :is(h3, h4, h5, h6) {
+  font-size: 14px;
+}
+.cc-amd :is(ul, ol) {
+  margin: 0;
+  padding-inline-start: 20px;
+}
+.cc-amd li + li {
+  margin-top: 4px;
+}
+.cc-amd li > :is(ul, ol) {
+  margin-top: 4px;
+}
+.cc-amd li > p {
+  white-space: normal;
+}
+.cc-amd blockquote {
+  margin: 0;
+  padding-inline-start: 12px;
+  border-inline-start: 4px solid var(--cc-at-quote);
+  color: var(--cc-at-muted);
+}
+.cc-amd img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.cc-amd-code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--cc-at-code-bg);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+/* 代码块：浅底、圆角 8；长行换行不横滚；右上角 hover 或聚焦时出复制。 */
+.cc-amd-pre {
+  position: relative;
+}
+.cc-amd-pre pre {
+  margin: 0;
+  padding: 8px 40px 8px 12px;
+  border-radius: 8px;
+  background: var(--cc-at-pre-bg);
+  box-shadow: inset 0 0 0 1px var(--cc-at-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.cc-amd-pre__copy {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.cc-amd-pre:is(:hover, :focus-within) .cc-amd-pre__copy {
+  opacity: 1;
+}
+
+/* 表格：圆角边框，列等分。 */
+.cc-amd-table {
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--cc-at-line);
+  overflow: hidden;
+}
+.cc-amd-table table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cc-amd-table :is(th, td) {
+  padding: 6px 8px;
+  text-align: start;
+  vertical-align: top;
+  border-top: 1px solid var(--cc-at-line);
+  overflow-wrap: anywhere;
+}
+.cc-amd-table thead tr:first-child th {
+  border-top: 0;
+}
+.cc-amd-table :is(th + th, td + td) {
+  border-inline-start: 1px solid var(--cc-at-line);
+}
+.cc-amd-table th {
+  background: var(--cc-at-pre-bg);
+  font-weight: 600;
+}
+
+/* 正文里的文件路径：S2 按钮压成行内代码的样子（无层规则盖过 S2 的 @layer）。 */
+.cc-amd .cc-amd-path {
+  display: inline;
+  height: auto;
+  min-height: 0;
+  min-width: 0;
+  padding: 0 4px;
+  margin: 0;
+  border-radius: 4px;
+  vertical-align: baseline;
+  background: var(--cc-at-code-bg);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: inherit;
+  color: var(--cc-at-link);
+  cursor: pointer;
+}
+.cc-amd .cc-amd-path * {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  margin: 0;
+}
+.cc-amd .cc-amd-path:hover {
+  background: var(--cc-at-code-bg-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- 工作记录 ---------- */
+/* 两段文字之间的那一行摘要（steps-group.tsx）：灰字 + 箭头，不放图标，字号跟正文；悬停与点开时字色加深。
+   在跑时前面是那一步的像素加载图形，类别名扫光，后面灰字的已用时间。 */
+.cc-work__head {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 8px;
+  margin-inline-start: -8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  text-align: start;
+  color: var(--cc-at-muted);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.cc-work__head.is-live {
+  gap: 8px;
+}
+.cc-work__head:focus-visible {
+  outline: 2px solid var(--cc-at-focus);
+  outline-offset: -2px;
+}
+.cc-work__head:hover .cc-work__sum:not(.cc-shimmer),
+.cc-work__head[aria-expanded='true'] .cc-work__sum:not(.cc-shimmer) {
+  color: var(--cc-at-text);
+}
+.cc-work__head:hover .cc-work__chev {
+  color: var(--cc-at-muted);
+}
+.cc-work__sum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-work__loader {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+.cc-work__meta {
+  flex: none;
+  color: var(--cc-at-faint);
+  white-space: nowrap;
+}
+.cc-work__chev {
+  flex: none;
+  display: inline-flex;
+  color: var(--cc-at-faint);
+}
+/* 点开后是一个带边框的框：一步一行、一张回执一行，行间分隔线；行再点开，详情在框里。 */
+.cc-steps--box {
+  border: 1px solid var(--cc-at-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.cc-steps--box > li + li {
+  border-top: 1px solid var(--cc-at-line);
+}
+.cc-steps--box .cc-step__row {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 0;
+}
+.cc-steps--box .cc-step__detail {
+  margin: 0 12px 12px 40px;
+}
+
+/* ---------- 工具步骤行 ---------- */
+.cc-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cc-step {
+  min-width: 0;
+}
+.cc-step__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  color: var(--cc-at-text);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.cc-step__row:hover {
+  background: var(--cc-at-row-hover);
+}
+.cc-step__row:focus-visible {
+  outline: 2px solid var(--cc-at-focus);
+  outline-offset: -2px;
+}
+.cc-step__row > * {
+  min-width: 0;
+}
+.cc-step__ic {
+  flex: none;
+  display: inline-flex;
+  color: var(--cc-at-muted);
+}
+.cc-step.is-failed .cc-step__ic {
+  color: var(--cc-at-err-text);
+}
+/* 运行中的那一步：类别图标换成 14px 的像素加载图形（PixelLoader 用 currentColor），放进与图标同尺寸的画布，换图标时这一行不动。 */
+.cc-step__loader {
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+.cc-step__label {
+  flex: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cc-step__sum {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  color: var(--cc-at-muted);
+}
+.cc-step__meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--cc-at-faint);
+  white-space: nowrap;
+}
+.cc-step.is-failed .cc-step__meta--code {
+  color: var(--cc-at-err-text);
+}
+.cc-step__chev {
+  flex: none;
+  display: inline-flex;
+  color: var(--cc-at-faint);
+}
+.cc-step__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px 30px;
+  min-width: 0;
+}
+.cc-step__sec {
+  border-radius: 8px;
+  background: var(--cc-at-pre-bg);
+  box-shadow: inset 0 0 0 1px var(--cc-at-line);
+  overflow: hidden;
+}
+.cc-step__sec header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--cc-at-muted);
+}
+.cc-step__sec pre {
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 4px 8px 8px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.cc-step__sec--err {
+  background: var(--cc-at-err-bg);
+  box-shadow: inset 0 0 0 1px var(--cc-at-err-line);
+}
+.cc-step__sec--err header {
+  color: var(--cc-at-err-text);
+  font-weight: 600;
+}
+.cc-step__sec--err pre {
+  color: var(--cc-at-err-strong);
+}
+.cc-step__reasoning {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--cc-at-muted);
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.cc-step__none {
+  margin: 0;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--cc-at-faint);
+}
+.cc-step__dl {
+  display: block;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+.cc-step__dl--add {
+  background: var(--cc-at-add-bg);
+  color: var(--cc-at-add-text);
+}
+.cc-step__dl--del {
+  background: var(--cc-at-del-bg);
+  color: var(--cc-at-del-text);
+}
+.cc-step__dl--hunk {
+  color: var(--cc-at-hunk);
+}
+.cc-step__dl--meta {
+  color: var(--cc-at-faint);
+}
+/* 运行中还没有输出：3 行骨架。 */
+.cc-step__skel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px;
+}
+.cc-step__skel span {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--cc-at-code-bg);
+}
+.cc-step__skel span:nth-child(1) {
+  width: 88%;
+}
+.cc-step__skel span:nth-child(2) {
+  width: 72%;
+}
+.cc-step__skel span:nth-child(3) {
+  width: 48%;
+}
+
+/* 运行中的扫光：渐变铺在文字上（background-clip: text）横向走，代替转圈。 */
+.cc-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--cc-at-shimmer) 0%,
+    var(--cc-at-shimmer) 40%,
+    var(--cc-at-shimmer-hi) 50%,
+    var(--cc-at-shimmer) 60%,
+    var(--cc-at-shimmer) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: cc-shimmer 1.6s linear infinite;
+}
+@keyframes cc-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-shimmer {
+    animation: none;
+    background-image: none;
+    color: var(--cc-at-shimmer);
+  }
+}
+
+/* ---------- 回合页脚 ---------- */
+.cc-turn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding-inline-start: 36px;
+  font-size: 12px;
+  color: var(--cc-at-faint);
+}
+.cc-turn--failed {
+  color: var(--cc-at-err-text);
+}
+.cc-turn__grow {
+  flex: 1 1 auto;
+}
+.cc-turn__live {
+  white-space: nowrap;
+}
+/* 运行中「正在工作」前的像素加载图形（PixelLoader 用 currentColor），与正文左边对齐，不进头像那一列。 */
+.cc-turn__loader {
+  flex: none;
+  color: var(--cc-at-muted);
+}
+/* 完成后的时长，hover 换成结束时刻；隐藏的 sizer 占住两种文案里较长的宽度，换字时不抖。 */
+.cc-turn__time {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+}
+.cc-turn__sizer {
+  visibility: hidden;
+}
+.cc-turn__spent,
+.cc-turn__at {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+}
+.cc-turn__at {
+  visibility: hidden;
+}
+.cc-turn:hover .cc-turn__spent {
+  visibility: hidden;
+}
+.cc-turn:hover .cc-turn__at {
+  visibility: visible;
+}

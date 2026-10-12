@@ -1,0 +1,316 @@
+/*
+ * 线程里的视频卡行与下载卡（产品设计 §3.2.2、§6.5；原型 agent-cards.css `.mjob` / `.dlcard`）。
+ * style 宏会丢掉逐边边框与等宽数字，这些写在这里；颜色变量由卡片根给（video-card-rows.tsx `cardVars`）。
+ */
+
+/* ---------- 视频卡下面的活（进行中的或最后一件摊开，其余收起） ---------- */
+.cc-vjobs {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0 16px 4px;
+  list-style: none;
+}
+.cc-vjob {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--cc-vc-line);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--cc-vc-muted);
+}
+.cc-vjob__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cc-vjob__ic {
+  display: flex;
+  flex: none;
+  color: var(--cc-vc-muted);
+}
+.cc-vjob__ic svg {
+  --iconPrimary: currentColor;
+  fill: currentColor;
+}
+.cc-vjob:is(.is-running, .is-queued) .cc-vjob__ic {
+  color: var(--cc-vc-live);
+}
+.cc-vjob.is-done .cc-vjob__ic {
+  color: var(--cc-vc-ok);
+}
+.cc-vjob:is(.is-failed, .is-interrupted) .cc-vjob__ic {
+  color: var(--cc-vc-err);
+}
+.cc-vjob__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cc-vc-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-vjob__tail {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.cc-vjob.is-done .cc-vjob__tail {
+  color: var(--cc-vc-ok);
+}
+.cc-vjob:is(.is-failed, .is-interrupted) .cc-vjob__tail {
+  color: var(--cc-vc-err);
+}
+.cc-vjob__line {
+  color: var(--cc-vc-body);
+  font-variant-numeric: tabular-nums;
+}
+/* 转录用的模型与参数（原型 `.mjob__asr`）：只读的一行，放不下时截断，完整的在 title 里 */
+.cc-vjob__asr {
+  overflow: hidden;
+  color: var(--cc-vc-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-vjob__warn {
+  color: var(--cc-vc-warn);
+}
+.cc-vjob__err {
+  color: var(--cc-vc-err);
+  font-weight: 600;
+}
+.cc-vjob__hint {
+  color: var(--cc-vc-muted);
+}
+.cc-vjob__file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.cc-vjob__fname {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--cc-vc-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-vjob__fmeta {
+  color: var(--cc-vc-faint);
+  font-variant-numeric: tabular-nums;
+}
+.cc-vjob__facts {
+  display: inline-flex;
+  gap: 4px;
+}
+.cc-vjob__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+.cc-vjob__time {
+  flex: 1;
+  min-width: 0;
+  color: var(--cc-vc-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 之前的活：一行「之前的 N 项」，默认收起（原型 agent-cards.css `.mjobs__more`） ---------- */
+.cc-vjobs__more {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px 0;
+  border-top: 1px solid var(--cc-vc-line);
+}
+/* 开合照线程步骤行（agent-thread.css `.cc-step__row`）：安静的文字、末尾一枚箭头；左右各出 8px 让悬停底色不贴字，字仍与上面的行对齐 */
+.cc-vjobs__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 16px);
+  min-height: 24px;
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  color: var(--cc-vc-muted);
+  cursor: pointer;
+}
+.cc-vjobs__toggle:hover {
+  background: var(--cc-vc-hover);
+}
+.cc-vjobs__toggle:focus-visible {
+  outline: 2px solid var(--cc-vc-focus);
+  outline-offset: -2px;
+}
+.cc-vjobs__toggle > * {
+  min-width: 0;
+}
+.cc-vjobs__label {
+  flex: 1 1 auto;
+}
+/* 收起的里有失败待处理的：靠右一枚警示图标 +「N 项待处理」，与失败行的图标、原因同色 */
+.cc-vjobs__pending {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--cc-vc-err);
+  font-variant-numeric: tabular-nums;
+}
+.cc-vjobs__chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--cc-vc-chev);
+}
+.cc-vjobs__pending svg,
+.cc-vjobs__chev svg {
+  --iconPrimary: currentColor;
+  fill: currentColor;
+}
+.cc-vjobs__earlier {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* 紧凑的历史行：头一行降到 12px，只留导出的文件名、失败原因与按钮 */
+.cc-vjob--compact {
+  padding: 8px 0;
+}
+.cc-vjob--compact .cc-vjob__name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--cc-vc-body);
+}
+
+/* ---------- 下载卡 ---------- */
+.cc-dlcard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border: 1px solid var(--cc-vc-line);
+  border-radius: 10px;
+  background: var(--cc-vc-bg);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--cc-vc-muted);
+}
+.cc-dlcard__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cc-dlcard__ic {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--cc-vc-ic-bg);
+  color: var(--cc-vc-live);
+}
+.cc-dlcard__ic svg {
+  --iconPrimary: currentColor;
+  fill: currentColor;
+}
+.cc-dlcard:is(.is-failed, .is-interrupted) .cc-dlcard__ic {
+  background: var(--cc-vc-ic-err-bg);
+  color: var(--cc-vc-err);
+}
+.cc-dlcard:is(.is-cancelled, .is-done) .cc-dlcard__ic {
+  background: var(--cc-vc-ic-idle-bg);
+  color: var(--cc-vc-muted);
+}
+.cc-dlcard__titles {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cc-dlcard__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cc-vc-text);
+}
+.cc-dlcard__name,
+.cc-dlcard__src {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-dlcard__src {
+  color: var(--cc-vc-faint);
+}
+.cc-dlcard__pct {
+  flex: none;
+  font-size: 14px;
+  color: var(--cc-vc-body);
+  font-variant-numeric: tabular-nums;
+}
+.cc-dlcard__line {
+  color: var(--cc-vc-body);
+  font-variant-numeric: tabular-nums;
+}
+.cc-dlcard__err {
+  color: var(--cc-vc-err);
+  font-weight: 600;
+}
+.cc-dlcard__hint {
+  color: var(--cc-vc-muted);
+}
+.cc-dlcard__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ---------- 视频卡的画面区（产品设计 §3.2.2；原型 apprail.css `.chat-movie__open` / `.chat-movie__player`） ---------- */
+/* 播放钮默认不画，指针移上去或键盘聚焦时才出现；没有悬停的设备一直显示 */
+.cc-vcard-play {
+  opacity: 0;
+  transition: opacity 150ms cubic-bezier(0.45, 0, 0.4, 1);
+}
+.cc-vcard-preview:is([data-hovered], [data-focus-visible]) .cc-vcard-play {
+  opacity: 1;
+}
+@media (hover: none) {
+  .cc-vcard-play {
+    opacity: 1;
+  }
+}
+/* 卡里原地播：播放器占画面区的位置，画面 16:9，控制条在画面下面；卡的边框就是它的边框 */
+.cc-vcard-player .cc-media-player {
+  border: 0;
+  border-radius: 0;
+}
+.cc-vcard-player .cc-media-player > video:not([hidden]) {
+  aspect-ratio: 16 / 9;
+  max-height: none;
+}

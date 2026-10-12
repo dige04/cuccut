@@ -1,0 +1,330 @@
+import { useMemo, useState, useSyncExternalStore } from 'react';
+import type { Id, MediaHandle } from '@cuccut/protocol';
+import { ActionButton, ToastQueue } from '@react-spectrum/s2';
+import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle';
+import ChevronRight from '@react-spectrum/s2/icons/ChevronRight';
+import Play from '@react-spectrum/s2/icons/Play';
+import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
+import { Button as RACButton } from 'react-aria-components';
+import { OUTPUT_COPY, VIDEO_CARD_COPY } from '../../copy.ts';
+import { outputSourceMissing, posterFrame, type ConversationOutput } from '../../model/conversation-outputs.ts';
+import { formatClock } from '../../model/format.ts';
+import { DESIGN } from '../../model/design-copy.ts';
+import { SLIDES } from '../../model/slides-copy.ts';
+import { formatBytes, isPlayable, KIND_LABEL } from '../../model/space.ts';
+import { videoStatus } from '../../model/video-cards.ts';
+import { useRuntime } from '../../runtime/context.tsx';
+import { sameTarget } from '../../runtime/video-controller.ts';
+import { useJobs } from '../../state/jobs-store.ts';
+import { useShell } from '../../state/shell-store.ts';
+import { useSpace } from '../../state/space-store.ts';
+import { useVideo } from '../../state/video-store.ts';
+import { CompactPlayer } from '../media/compact-player.tsx';
+import { KIND_ICON } from '../space/space-list.tsx';
+import { useEntryThumbnail } from '../use-entry-thumbnail.ts';
+import { cardVars, VideoJobRows, VideoStatusBadge } from './video-card-rows.tsx';
+import { T } from './thread-copy.ts';
+
+/** 文件是一行卡片（原型 apprail.css `.chat-output` :127-134）：图标、名字与说明、末尾的去向。 */
+const outputCard = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  flexShrink: 0,
+  width: 'full',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  paddingY: 12,
+  paddingX: { default: 16, isPopover: 12 },
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'gray-200',
+  borderRadius: '[10px]',
+  backgroundColor: { default: 'gray-25', isHovered: 'gray-50', isPressed: 'gray-75' },
+  textAlign: 'start',
+  font: 'ui',
+  color: 'gray-900',
+  cursor: 'default',
+  outlineStyle: { default: 'none', isFocusVisible: 'solid' },
+  outlineColor: 'focus-ring',
+  outlineWidth: 2,
+  outlineOffset: -2,
+  '--iconPrimary': { type: 'fill', value: 'currentColor' },
+});
+const outputIcon = style({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  size: 40,
+  borderRadius: 'default',
+  backgroundColor: 'gray-75',
+  color: 'gray-700',
+});
+const outputBody = style({ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1, minWidth: 0 });
+const outputName = style({ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+/**
+ * 视频是一张竖排的视频卡（产品设计 §3.2.2、§6.5，原型 apprail.css `.chat-output--movie` :142-155、home-session.jsx
+ * `SessionArtifactCard`）：上面 16:9 的画面，能播的点了在卡里原地播，不能播的在右侧打开；下面名字、状态词与时长，旁边一个「打开编辑器」；
+ * 再下面一件活一行。
+ */
+const videoCard = style({
+  display: 'flex',
+  flexDirection: 'column',
+  flexShrink: 0,
+  width: 'full',
+  maxWidth: 360,
+  minWidth: 0,
+  boxSizing: 'border-box',
+  overflow: 'hidden',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'gray-200',
+  borderRadius: '[10px]',
+  backgroundColor: 'gray-25',
+  font: 'ui',
+  color: 'gray-900',
+});
+/**
+ * 视频的画面区：有真帧画真帧；拿不到画「暂无缩略图」，源目录不在了画「找不到源文件」；右下角是时长。
+ * 能在卡里播的，指针移上去或键盘聚焦时中间出现播放钮（`cc-vcard-play`，video-cards.css）。
+ */
+const videoPreview = style({
+  position: 'relative',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  width: 'full',
+  aspectRatio: 'video',
+  overflow: 'hidden',
+  padding: 0,
+  borderWidth: 0,
+  backgroundColor: { default: 'gray-75', isHovered: 'gray-100', isPressed: 'gray-200' },
+  font: 'ui-sm',
+  color: 'gray-600',
+  cursor: 'default',
+  outlineStyle: { default: 'none', isFocusVisible: 'solid' },
+  outlineColor: 'focus-ring',
+  outlineWidth: 2,
+  outlineOffset: -2,
+  '--iconPrimary': { type: 'fill', value: 'currentColor' },
+});
+const posterImage = style({ position: 'absolute', inset: 0, width: 'full', height: 'full', objectFit: 'cover' });
+const playMark = style({
+  position: 'absolute',
+  top: '[50%]',
+  left: '[50%]',
+  translateX: '[-50%]',
+  translateY: '[-50%]',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  size: 40,
+  borderRadius: 'full',
+  backgroundColor: 'gray-25',
+  color: 'gray-900',
+  boxShadow: 'elevated',
+});
+const videoDuration = style({
+  position: 'absolute',
+  insetEnd: 8,
+  bottom: 8,
+  paddingX: '[6px]',
+  paddingY: 4,
+  borderRadius: 'sm',
+  backgroundColor: 'gray-900',
+  font: 'code-xs',
+  // font 简写会设置 code 文字色，角标的对比色必须在它之后。
+  color: 'gray-25',
+});
+const videoFooter = style({ display: 'flex', alignItems: 'center', gap: 12, paddingX: 16, paddingY: 12 });
+const videoName = style({ fontWeight: 'bold', overflowWrap: 'anywhere' });
+const videoMeta = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, minWidth: 0 });
+const videoAction = style({ flexShrink: 0 });
+const outputDetail = style({ font: 'ui-xs', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+const outputTail = style({ display: 'flex', flexShrink: 0, color: 'gray-600' });
+
+/**
+ * 视频卡的真帧：用 Space 的封面（`space.thumbnail`，宽够卡片在 2 倍屏上画），不用打开编辑器。
+ * Space 还没有封面、编辑器开着这部视频时，先画当前快照的封面（`media.thumbnail`，胶片条那一档，较糊）；
+ * 编辑器里改了封面那一帧，等条目更新后 Space 的封面跟上。
+ */
+function usePoster(output: ConversationOutput): string | null {
+  const thumbnail = useEntryThumbnail(output.kind === 'video' ? output.entry : null);
+  const media = useRuntime().videos.media;
+  useSyncExternalStore(media.subscribe, media.version);
+  const target = output.video;
+  const snapshot = useVideo((s) =>
+    target && s.video?.status === 'ready' && (s.video.videoId === output.id || sameTarget(s.video.target, target))
+      ? (s.video.state?.video ?? null)
+      : null,
+  );
+  const frame = useMemo(() => (snapshot ? posterFrame(snapshot) : null), [snapshot]);
+  if (thumbnail?.kind === 'image') return thumbnail.url;
+  return frame ? media.thumbnail(frame.asset, frame.at) : null;
+}
+
+/** 编辑器开着这部视频、文档里已经有转录（`speech`）：视频卡的「已转录」不必等 Job 记录。 */
+function useTranscribedInEditor(output: ConversationOutput): boolean {
+  const target = output.video;
+  return useVideo(
+    (s) =>
+      output.kind === 'video' &&
+      s.video?.status === 'ready' &&
+      (s.video.videoId === output.id || (!!target && sameTarget(s.video.target, target))) &&
+      Object.values(s.video.state?.video.documents ?? {}).some((doc) => doc.kind === 'speech'),
+  );
+}
+
+/**
+ * 一项产物（原型 home-session.jsx `SessionArtifactCard`）：会话头「产物」弹层、线程里的视频卡与每条回复下面的文件共用。
+ * 视频在右边的编辑器里打开；视频文件与音频在功能区播放；其它文件在文件夹中显示。`onOpen` 在打开之前调（弹层用来收起）。
+ * `jobIds`：视频卡下面列的活（线程里与弹层里都是整条会话在这部视频上的）。
+ */
+export function OutputCard({
+  output,
+  conversationId,
+  placement = 'message',
+  jobIds,
+  onOpen,
+}: {
+  output: ConversationOutput;
+  conversationId: Id;
+  placement?: 'message' | 'popover';
+  jobIds?: readonly Id[];
+  onOpen?: () => void;
+}) {
+  const transcribed = useTranscribedInEditor(output);
+  // 只取状态词这两个字，进度每一跳不重画整张卡（行自己订阅）。
+  const statusKey = useJobs((s) => {
+    if (output.kind !== 'video') return '';
+    const status = videoStatus(output.id, s.jobs, transcribed);
+    return status ? `${status.key}\n${status.text}` : '';
+  });
+  const status = statusKey
+    ? { key: statusKey.split('\n')[0] as NonNullable<ReturnType<typeof videoStatus>>['key'], text: statusKey.split('\n')[1]! }
+    : null;
+  const missing = useSpace((s) => outputSourceMissing(output, s));
+  const poster = usePoster(output);
+  const Icon = KIND_ICON[output.kind];
+  const playable = !output.video && output.entry !== null && isPlayable(output.entry.fileName);
+  const isVideo = output.kind === 'video';
+  const slides = output.slides;
+  const design = output.design;
+  const designSystem = output.designSystem;
+  const words = (
+    isVideo
+      ? [KIND_LABEL.video, output.durationSeconds ? formatClock(output.durationSeconds) : null]
+      : slides
+        ? [KIND_LABEL.slides, slides.slideCount === null ? null : SLIDES.pages(slides.slideCount)]
+        : design
+          ? [KIND_LABEL.design, design.boardCount === null ? null : DESIGN.boards(design.boardCount)]
+          : designSystem
+            ? [KIND_LABEL['design-system']]
+            : [KIND_LABEL[output.kind], output.entry ? formatBytes(output.entry.size) : null, playable ? OUTPUT_COPY.playHere : output.entry ? OUTPUT_COPY.previewHere : null]
+  )
+    .filter(Boolean)
+    .join(' · ');
+
+  // 卡里原地播：开合只是这张卡自己的事；点了播放才取媒体句柄，挂上播放器后自动开播。
+  const [inline, setInline] = useState<MediaHandle | null>(null);
+  const [loading, setLoading] = useState(false);
+  const runtime = useRuntime();
+  const play = (entryId: Id) => {
+    setLoading(true);
+    runtime
+      .resolveMedia({ entryId })
+      .then(setInline, (error: unknown) => ToastQueue.negative(VIDEO_CARD_COPY.openFailed(error instanceof Error ? error.message : String(error))))
+      .finally(() => setLoading(false));
+  };
+
+  const activate = () => {
+    onOpen?.();
+    const shell = useShell.getState();
+    // 原型 home-session.jsx `SessionArtifactCard`：非视频的产物都在功能区的单文件标签里打开；
+    // 那里视频与音频用播放器，其余用查看器，预览不了的如实说明并给「在文件夹中显示」。
+    if (output.video) shell.openVideo(output.video);
+    // 幻灯片在功能区的幻灯片标签里预览、编辑与标注（docs/design/slides §8.1）。
+    else if (slides) shell.openPane({ kind: 'slides', target: slides.target });
+    // 设计稿同样在功能区的设计稿标签里打开（docs/design/canvas §8.1）。
+    else if (design) shell.openPane({ kind: 'design', target: design.target });
+    // 设计系统在功能区的设计系统标签里打开（docs/design/canvas §10.6）。
+    else if (designSystem) shell.openPane({ kind: 'design-system', target: designSystem.target });
+    else if (!isVideo && output.entry) shell.openPane({ kind: 'file', target: { conversationId, path: output.entry.relPath } });
+  };
+
+  if (isVideo) {
+    const showPoster = poster !== null && !missing;
+    // 还不知道在哪打开（流程新建的视频，Space 还没扫到）：画面与「打开编辑器」先置灰。
+    const canOpen = output.video !== null;
+    // 卡里原地播（产品设计 §3.2.2）：有真帧、Space 里有这条视频、源文件在；播的是视频的原片，不是剪过的版本。
+    const canPlay = showPoster && output.entry !== null;
+    return (
+      // 画面区里的播放钮与「暂无缩略图」是画面内容，保留自己的尺寸（产品设计 §2.1）
+      <div className={`${videoCard} ${cardVars}`} data-cc-icons="own">
+        {inline ? (
+          <div className="cc-vcard-player">
+            <CompactPlayer handle={inline} fileName={output.name} kind="video" memoryKey={`card:${output.id}`} autoPlay />
+          </div>
+        ) : (
+          <RACButton
+            className={(state) => `${videoPreview(state)} cc-vcard-preview`}
+            aria-label={canPlay ? OUTPUT_COPY.playVideo(output.name) : OUTPUT_COPY.openVideo(output.name)}
+            isDisabled={canPlay ? loading : !canOpen}
+            onPress={canPlay ? () => play(output.entry!.id) : activate}>
+            {showPoster ? (
+              <>
+                <img className={posterImage} src={poster} alt="" decoding="async" />
+                {canPlay ? (
+                  <span className={`${playMark} cc-vcard-play`} aria-hidden>
+                    <Play />
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {missing ? <AlertTriangle /> : <Icon />}
+                {missing ? OUTPUT_COPY.sourceMissing : OUTPUT_COPY.noThumbnail}
+              </>
+            )}
+            {output.durationSeconds ? <span className={`${videoDuration} cc-tabular`}>{formatClock(output.durationSeconds)}</span> : null}
+          </RACButton>
+        )}
+        <div className={videoFooter}>
+          <span className={outputBody}>
+            <span className={videoName}>{output.name}</span>
+            <span className={videoMeta}>
+              {status ? <VideoStatusBadge status={status} /> : null}
+              <span className={outputDetail}>{words}</span>
+            </span>
+          </span>
+          <ActionButton size="S" styles={videoAction} isDisabled={!canOpen} onPress={activate}>
+            {OUTPUT_COPY.openEditor}
+          </ActionButton>
+        </div>
+        {jobIds?.length ? <VideoJobRows jobIds={jobIds} /> : null}
+      </div>
+    );
+  }
+  return (
+    <RACButton
+      className={(state) => outputCard({ ...state, isPopover: placement === 'popover' })}
+      aria-label={T.output.aria(output.name, words)}
+      onPress={activate}>
+      <span className={outputIcon} data-cc-icons="primary">
+        <Icon />
+      </span>
+      <span className={outputBody}>
+        <span className={outputName} title={output.name}>
+          {output.name}
+        </span>
+        <span className={outputDetail}>{words}</span>
+      </span>
+      <span className={outputTail}>
+        <ChevronRight />
+      </span>
+    </RACButton>
+  );
+}

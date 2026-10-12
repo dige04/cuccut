@@ -1,0 +1,16 @@
+{
+  "name": "@cuccut/jobs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cuccut/editor-wasm": "*",
+    "@cuccut/models": "*",
+    "@cuccut/process-host": "*",
+    "@cuccut/protocol": "*",
+    "@cuccut/runtime-storage": "*"
+  }
+}

@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const nl: MusicLocalMessages = {
+  defaultDesc: 'Vooraf geselecteerd bij het genereren van muziek. Zonder standaardmodel kies je zelf een model; een handmatige keuze heeft voorrang.',
+  cloudDefault: (name) => `Het standaardmodel is ${name}; hier een lokaal model kiezen vervangt dit.`,
+  noInstalled: 'Er is nog geen muziekmodel geïnstalleerd. Download hieronder eerst een model.',
+  licenseUse: 'Ook muziek van dit model mag alleen in niet-commerciële inhoud worden gebruikt. Gebruik andere muziek voor commerciële video’s.',
+  style: 'Stijl',
+  mode: 'Vorm',
+  note: (seconds, steps, eta) => `Het luistervoorbeeld ligt vast op ${seconds} s${steps !== null ? ` en ${steps} stappen` : ''}, zonder planning; het controleert alleen of dit model en de bijbehorende muziekengine geluid kunnen maken. ${eta}.`,
+  songNote: 'Een lied gebruikt een korte ingebouwde voorbeeldtekst.',
+  toolNote: 'Gebruik voor echte achtergrondmuziek Tools › Muziek genereren.',
+  openTool: 'Muziek genereren openen',
+  generate: 'Luistervoorbeeld genereren',
+  again: 'Opnieuw genereren',
+  cancel: 'Annuleren',
+  busy: 'Genereren…',
+  stalePrefix: 'Vorige · ',
+  stale: 'Dit clip gebruikt je vorige keuze. Kies Luistervoorbeeld genereren na het wijzigen van de stijl of vorm om het nieuwe resultaat te horen.',
+  download: 'Downloaden',
+  resultLabel: 'Resultaat van het luistervoorbeeld',
+  loadingAudio: 'Audio ophalen…',
+  audioFailed: (message) => `Kan de audio niet ophalen: ${message}`,
+  downloadFailed: (message) => `Kan niet downloaden: ${message}`,
+  fileName: (name) => `${name} luistervoorbeeld.wav`,
+};

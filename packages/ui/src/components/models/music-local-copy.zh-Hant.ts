@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const zhHant: MusicLocalMessages = {
+  defaultDesc: '生成音樂時會預先選取它；沒有預設時需自行選擇模型，手動選擇優先。',
+  cloudDefault: (name) => `預設是 ${name}；在這裡選擇本機模型會改用它。`,
+  noInstalled: '還沒有安裝音樂模型：請先從下方下載一個。',
+  licenseUse: '用它生成的音樂也只能用於非商業內容；要商用的影片請改用其他音樂。',
+  style: '風格',
+  mode: '形式',
+  note: (seconds, steps, eta) => `試聽固定 ${seconds} 秒${steps !== null ? `、${steps} 步` : ''}、不先編排，只確認這個模型和內建的音樂引擎能不能發出聲音；${eta}。`,
+  songNote: '帶演唱的歌曲會使用一句內建的範例歌詞。',
+  toolNote: '要正式製作配樂，請到工具 › 生成音樂。',
+  openTool: '開啟生成音樂',
+  generate: '生成試聽',
+  again: '再生成一次',
+  cancel: '取消',
+  busy: '正在生成…',
+  stalePrefix: '上一次 · ',
+  stale: '這段是用你上一次的選擇產生的。變更風格或形式後，請點「生成試聽」聽新的版本。',
+  download: '下載',
+  resultLabel: '試聽結果',
+  loadingAudio: '正在載入音訊…',
+  audioFailed: (message) => `無法載入音訊：${message}`,
+  downloadFailed: (message) => `無法下載：${message}`,
+  fileName: (name) => `${name} 試聽.wav`,
+};

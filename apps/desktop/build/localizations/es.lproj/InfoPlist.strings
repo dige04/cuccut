@@ -1,0 +1,2 @@
+"NSLocalNetworkUsageDescription" = "CucCut necesita acceder a tu red local para detectar nodos de Remote Compute y conectarse a ellos.";
+"NSMicrophoneUsageDescription" = "CucCut utiliza el micrófono para grabar audio y transcribirlo, y para grabar tu voz y clonarla en Mis voces.";

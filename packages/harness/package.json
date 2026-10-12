@@ -1,0 +1,13 @@
+{
+  "name": "@cuccut/harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cuccut/protocol": "*",
+    "@cuccut/runtime-storage": "*"
+  }
+}

@@ -1,0 +1,187 @@
+import type { Id, MessageRef, TimelineItem } from '@cuccut/protocol';
+
+/** 视频的来源（`VideoRef.source`）：属于哪个项目，或在哪条无项目会话的工作目录里。 */
+export interface HandoffSource {
+  projectId: Id | null;
+  conversationId: Id | null;
+}
+
+/** 挑会话要看的会话字段（目录里的 `Conversation`）。 */
+export interface HandoffConversation {
+  id: Id;
+  projectId: Id | null;
+  /** 共用另一条会话工作目录的会话：那条会话的 id。 */
+  folderOf?: Id;
+  title: string;
+  archived: boolean;
+  updatedAt: string;
+}
+
+/**
+ * 「会话」行的「接着这个视频当前的会话」指哪一条（原型 model-ai-prompt.js `sessionOptions`：这个项目里最近的那条）：
+ *
+ * 1. 当前就在一条会话里（Home 左侧的，或 Space 里这个视频的悬浮会话最近发起的那条），它和视频同属一个项目、或就是视频所在的
+ *    那条无项目会话（或与它共用工作目录的）：就是它。
+ * 2. 视频属于项目：这个项目里最近更新、没归档的那条。
+ * 3. 视频不属于项目：它所在的那条会话与共用它工作目录的会话里最近更新、没归档的那条；都归档了时是它所在的那条。
+ *
+ * 都没有时 null。有没有说过话（消息数）由调用方另看：没说过话的不给「接着」（`sessionOptions`）。
+ */
+export function currentConversation<T extends HandoffConversation>({
+  source,
+  current,
+  conversations,
+}: {
+  source: HandoffSource | null;
+  current: Id | null;
+  conversations: readonly T[];
+}): T | null {
+  if (!source) return null;
+  const belongs = (c: T) =>
+    source.projectId ? c.projectId === source.projectId : c.id === source.conversationId || (!!c.folderOf && c.folderOf === source.conversationId);
+  const here = current ? conversations.find((c) => c.id === current) : undefined;
+  if (here && belongs(here)) return here;
+  let latest: T | null = null;
+  for (const c of conversations) if (!c.archived && belongs(c) && (!latest || c.updatedAt > latest.updatedAt)) latest = c;
+  if (!latest && !source.projectId) return conversations.find((c) => c.id === source.conversationId) ?? null;
+  return latest;
+}
+
+/**
+ * 交给 Agent 发到哪：新建一条（在视频的项目里，或与视频所在的那条无项目会话共用工作目录：`folderOf`），或接着已有的那条。
+ */
+export type HandoffPlan =
+  | { kind: 'existing'; conversationId: Id }
+  | { kind: 'create'; projectId: Id }
+  | { kind: 'create'; projectId: null; folderOf: Id }
+  | { kind: 'none' };
+
+/**
+ * 按「会话」行的选择定下发到哪（产品设计 §5.10「交给智能体」）：新会话建在视频的项目里；视频不属于项目时新会话与它所在的那条会话
+ * 共用工作目录（架构设计 §3.10，`conversations.create` 的 `folderOf`），同样打得开它，不建项目——那条会话要还在目录里。
+ * 接着的那条要还在目录里。
+ */
+export function planHandoff({
+  session,
+  source,
+  conversations,
+}: {
+  session: 'new' | { id: Id };
+  source: HandoffSource | null;
+  conversations: readonly { id: Id }[];
+}): HandoffPlan {
+  if (session === 'new') {
+    if (source?.projectId) return { kind: 'create', projectId: source.projectId };
+    const owner = source?.conversationId;
+    return owner && conversations.some((c) => c.id === owner) ? { kind: 'create', projectId: null, folderOf: owner } : { kind: 'none' };
+  }
+  return conversations.some((c) => c.id === session.id) ? { kind: 'existing', conversationId: session.id } : { kind: 'none' };
+}
+
+/** 一条会话里的消息数（「会话」行写「已有 n 条消息」）：用户说的与 Agent 回的都算，工具调用、思考与通知不算。 */
+export function messageCount(items: readonly { kind: string }[]): number {
+  let n = 0;
+  for (const item of items) if (item.kind === 'user-message' || item.kind === 'agent-message') n++;
+  return n;
+}
+
+/**
+ * 留在原地的工具页（找可剪的口、刷新过期译文，`agentStaysOnPage`）交出去的那一次走到哪了，从那条会话的时间线读（原型
+ * model-agent.js `sessionProgress`）：话还排着或任务还没出现时是 `starting`；任务在跑时有待批的审批就是 `waiting`（等用户去会话里
+ * 放行），否则 `running`，`step` 是最近一步的标题；任务结束按它的状态。结果本身（剪辑建议、重译的句子）照常写进视频，这里只报进度。
+ */
+export type AgentRunState =
+  | { kind: 'starting' }
+  | { kind: 'running'; step: string | null }
+  | { kind: 'waiting'; step: string | null }
+  | { kind: 'done' }
+  | { kind: 'failed'; error: string | null; errorRef: MessageRef | null }
+  | { kind: 'stopped' };
+
+/**
+ * 认任务：发出去时拿到了任务号就按它；排了队的（会话正忙）没有，认交出去之后才开始的第一个任务——同一句话可能在这条会话里
+ * 发过不止一次，不按正文认。
+ */
+export function agentRunState({
+  taskId,
+  handedAt,
+  items,
+}: {
+  taskId: Id | null;
+  handedAt: string;
+  items: readonly TimelineItem[] | undefined;
+}): AgentRunState {
+  if (!items) return { kind: 'starting' };
+  let task: Extract<TimelineItem, { kind: 'task' }> | null = null;
+  for (const item of items) {
+    if (item.kind !== 'task') continue;
+    if (taskId ? item.id === taskId : item.startedAt >= handedAt) {
+      task = item;
+      break;
+    }
+  }
+  if (!task) return { kind: 'starting' };
+  const id = task.id;
+  if (task.status === 'completed') return { kind: 'done' };
+  if (task.status === 'stopped') return { kind: 'stopped' };
+  if (task.status === 'failed') return { kind: 'failed', error: task.error, errorRef: task.errorRef ?? null };
+  let step: string | null = null;
+  let waiting = false;
+  for (const item of items) {
+    if (item.taskId !== id) continue;
+    if (item.kind === 'tool-call') step = item.title;
+    else if (item.kind === 'approval') waiting = item.status === 'pending';
+  }
+  return waiting ? { kind: 'waiting', step } : { kind: 'running', step };
+}
+
+/** 记在本机的一次交接（`useAiToolAgentRuns`）：`restored` 是上次打开 App 时留下、这次还没认过的。 */
+export interface StoredAgentRun {
+  conversationId: Id;
+  taskId: Id | null;
+  restored?: boolean;
+}
+
+/**
+ * 重启后接上还在跑的那一次（原型 panel-aitools.jsx「重新打开工具页时接上还在跑的那条」）：上次留下的记录，那条会话的任务还在跑
+ * （发出去时拿到任务号的要是同一个任务；排了队的，会话在忙或话还在队里）就接上、去掉 `restored`，工具页照常画进度、跑完给结果；
+ * 已经跑完、会话不在了的丢掉，工具页回参数页。目录还没读到时不动。这次打开后交出去的不受影响。没有变化时返回原对象。
+ */
+export function adoptRestoredRuns<T extends StoredAgentRun>(
+  runs: Record<string, T>,
+  {
+    ready,
+    conversations,
+    queued,
+  }: { ready: boolean; conversations: readonly { id: Id; activeTaskId: Id | null }[]; queued: (conversationId: Id) => boolean },
+): Record<string, T> {
+  if (!ready) return runs;
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const [key, run] of Object.entries(runs)) {
+    if (!run.restored) {
+      next[key] = run;
+      continue;
+    }
+    changed = true;
+    const active = conversations.find((c) => c.id === run.conversationId)?.activeTaskId ?? null;
+    const live = run.taskId ? active === run.taskId : active !== null || queued(run.conversationId);
+    if (live) {
+      const { restored: _drop, ...adopted } = run;
+      next[key] = adopted as T;
+    }
+  }
+  return changed ? next : runs;
+}
+
+/**
+ * 没发出去时把那句话放回输入框（比如 Agent 没连上、发送失败）：输入框里本来有字就接在后面（空一行），不覆盖用户写了一半的话；同一句已经在里面就不重复放。
+ */
+export function mergeDraft(existing: string | undefined, text: string): string {
+  const before = existing ?? '';
+  const next = text.trim();
+  if (!next) return before;
+  if (!before.trim()) return next;
+  if (before.includes(next)) return before;
+  return `${before.trimEnd()}\n\n${next}`;
+}

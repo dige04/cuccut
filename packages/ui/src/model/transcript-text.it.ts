@@ -1,0 +1,8 @@
+import type { TranscriptTextMessages } from './transcript-text.ts';
+import { pluralForm } from '@cuccut/protocol';
+
+export const it: TranscriptTextMessages = {
+  receipt: (paragraphs: number, amount: string) => `${pluralForm('it', paragraphs, { one: `${paragraphs} paragrafo`, other: `${paragraphs} paragrafi` })} · ${amount}`,
+  characters: (n: number) => pluralForm('it', n, { one: `${n} carattere`, other: `${n} caratteri` }),
+  words: (n: number) => pluralForm('it', n, { one: `${n} parola`, other: `${n} parole` }),
+};

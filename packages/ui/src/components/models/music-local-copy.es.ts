@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const es: MusicLocalMessages = {
+  defaultDesc: 'Preseleccionado al generar música. Sin predeterminado eliges el modelo tú; una elección manual siempre tiene prioridad.',
+  cloudDefault: (name) => `El predeterminado es ${name}; elegir aquí un modelo local lo reemplaza.`,
+  noInstalled: 'Aún no hay un modelo de música instalado. Descarga uno abajo primero.',
+  licenseUse: 'La música creada con él solo se puede usar en contenido no comercial; para vídeos que usarás comercialmente, usa otra música.',
+  style: 'Estilo',
+  mode: 'Forma',
+  note: (seconds, steps, eta) => `La vista previa es fija de ${seconds} s${steps !== null ? ` y ${steps} pasos` : ''}, sin planificación; solo comprueba que este modelo y su motor de música pueden producir sonido. ${eta}.`,
+  songNote: 'Una canción usa una breve letra de ejemplo incluida.',
+  toolNote: 'Para una banda sonora real, usa Herramientas › Generar música.',
+  openTool: 'Abrir Generar música',
+  generate: 'Generar vista previa',
+  again: 'Generar de nuevo',
+  cancel: 'Cancelar',
+  busy: 'Generando…',
+  stalePrefix: 'Anterior · ',
+  stale: 'Este clip se creó con tus elecciones anteriores. Después de cambiar el estilo o la forma, haz clic en «Generar vista previa» para escuchar el nuevo.',
+  download: 'Descargar',
+  resultLabel: 'Resultado de la vista previa',
+  loadingAudio: 'Cargando audio…',
+  audioFailed: (message) => `No se pudo cargar el audio: ${message}`,
+  downloadFailed: (message) => `No se pudo descargar: ${message}`,
+  fileName: (name) => `Vista previa de ${name}.wav`,
+};

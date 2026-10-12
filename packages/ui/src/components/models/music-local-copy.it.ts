@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const it: MusicLocalMessages = {
+  defaultDesc: 'Preselezionato quando generi musica. Senza predefinito scegli tu il modello; una scelta manuale ha sempre priorità.',
+  cloudDefault: (name) => `Il predefinito è ${name}; scegliere qui un modello locale lo sostituisce.`,
+  noInstalled: 'Nessun modello musicale installato. Scaricane prima uno sotto.',
+  licenseUse: 'Anche la musica creata con questo modello può essere usata solo in contenuti non commerciali; per video commerciali usa un’altra musica.',
+  style: 'Stile',
+  mode: 'Forma',
+  note: (seconds, steps, eta) => `L’anteprima è fissa a ${seconds} s${steps !== null ? ` e ${steps} passaggi` : ''}, senza pianificazione; verifica solo che questo modello e il suo motore musicale riescano a produrre suono. ${eta}.`,
+  songNote: 'Una canzone usa un breve testo di esempio integrato.',
+  toolNote: 'Per una vera colonna sonora, usa Strumenti › Genera musica.',
+  openTool: 'Apri Genera musica',
+  generate: 'Genera anteprima',
+  again: 'Genera di nuovo',
+  cancel: 'Annulla',
+  busy: 'Generazione…',
+  stalePrefix: 'Precedente · ',
+  stale: 'Questo frammento è stato creato con le scelte precedenti. Dopo aver cambiato stile o forma, fai clic su «Genera anteprima» per ascoltare quello nuovo.',
+  download: 'Scarica',
+  resultLabel: 'Risultato dell’anteprima',
+  loadingAudio: 'Caricamento dell’audio…',
+  audioFailed: (message) => `Impossibile caricare l’audio: ${message}`,
+  downloadFailed: (message) => `Impossibile scaricare: ${message}`,
+  fileName: (name) => `Anteprima ${name}.wav`,
+};

@@ -1,0 +1,38 @@
+import type { ModelsLocalMessages } from './models-local-copy.ts';
+
+export const ko: ModelsLocalMessages = {
+  reason: {
+    unsupported: '이 컴퓨터에서 지원하지 않음',
+    resource: '꺼짐',
+    'worker-missing': 'Model Worker 없음',
+    'missing-manifest': '매니페스트 없음',
+    'missing-file': '파일 없음',
+    'size-mismatch': '파일 크기 불일치',
+    'hash-mismatch': '체크섬 불일치',
+    incomplete: '구성 요소 없음',
+    'load-failed': '불러오지 못함',
+    relocating: '이동 중',
+  },
+  chipDefault: '기본값',
+  chipLoading: '불러오는 중',
+  chipReady: '불러옴',
+  chipBusy: '실행 중',
+  chipUnloading: '해제 중',
+  chipUnavailable: '사용할 수 없음',
+  chipMissing: (names) => `${names.join(', ')} 없음`,
+  capability: {
+    transcribe: '전사',
+    align: '정렬',
+    synthesize: '합성',
+    image: '이미지',
+    separate: '분리',
+    music: '음악',
+    diarize: '화자 구분',
+  },
+  auto: '자동 선택',
+  notInstalled: (name) => `${name}(설치되지 않음)`,
+  componentName: { 'audiocpp-engine': 'audio.cpp 엔진', aligner: '강제 정렬기', speaker: '화자 임베딩', vad: 'VAD(음성 활동 감지)', tokenizer: '토크나이저', segmentation: '화자 분할', codec: '음성 코덱', aux: '보조 모델' },
+  componentDesc: { 'audiocpp-engine': 'YuE2를 실행하는 엔진 · 플랫폼별로 다운로드 · Windows / Linux는 Vulkan GPU 드라이버 필요', vad: '사람이 말하는 구간을 찾습니다', aligner: '텍스트를 단어 단위 타이밍에 맞춥니다', tokenizer: '텍스트와 모델 토큰을 서로 변환합니다', speaker: '화자를 구분합니다', segmentation: '화자별로 말을 시작하고 멈추는 지점을 찾습니다', codec: '음향 토큰을 파형으로 되돌립니다', aux: '주 모델이 사용하는 추가 모델' },
+  githubRelease: (repo, tag) => `GitHub 릴리스 ${repo} ${tag}`,
+  weights: '모델 가중치',
+};

@@ -1,0 +1,13 @@
+{
+  "name": "@cuccut/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "cuccut": "./src/main.ts"
+  },
+  "dependencies": {
+    "@cuccut/client": "*",
+    "@cuccut/protocol": "*"
+  }
+}

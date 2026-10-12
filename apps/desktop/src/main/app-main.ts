@@ -1,0 +1,334 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { BrowserWindow, Menu, app, dialog, ipcMain, nativeTheme, session, shell } from 'electron';
+import { onLocaleChange, setLocale } from '@cuccut/protocol';
+import { resolveRuntimeHome } from '@cuccut/runtime-storage';
+import { appMenuTemplate } from './app-menu.ts';
+import { installAppUpdates } from './app-update-ipc.ts';
+import type { AppUpdateService } from './app-update-service.ts';
+import { M } from './main-copy.ts';
+import { messageFileProperties, messageFiles } from './message-files.ts';
+import { localeFromRenderer, startupLocale } from './main-locale.ts';
+import { packagedResources } from './packaged-resources.ts';
+import { RuntimeSupervisor } from './runtime-supervisor.ts';
+import { installWebTabs } from './web-tabs.ts';
+import { openLocalFile } from './open-local-file.ts';
+import { installStdioErrorGuards } from './stdio-errors.ts';
+import { saveDialogPath, saveFileData } from './save-dialog-path.ts';
+import { desktopRuntimeHeaders, desktopRuntimeResponseHeaders, isDesktopRuntimeRequest } from './runtime-origin.ts';
+
+/**
+ * 桌面端主进程：找到或启动 Runtime、开窗口、提供少量原生能力（选目录、在文件夹中显示）。
+ * 业务逻辑都在 Runtime 里；界面经 WebSocket 直连 Runtime，主进程不转发业务请求（架构设计 §11.1）。
+ *
+ * 只做定义、没有副作用：入口（`index.ts`）先判断这次是不是离屏宿主，不是才调 `startDesktopApp`。
+ */
+export function startDesktopApp(): void {
+  installStdioErrorGuards();
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  const isDev = !app.isPackaged;
+  // 开发态 Electron 用它自己的默认图标；打包后 macOS / Windows 从包里的 .icns / .ico 读，不走这里。
+  // 开发时 app.getAppPath() 是 apps/desktop，图标由 `npm run icons` 生成（tools/app-icon）。
+  const devIcon = isDev ? path.join(app.getAppPath(), 'build', 'icon.png') : undefined;
+
+  // 开发时用仓库里的 .dev/cuccut-home，不碰 ~/.cuccut。CUCCUT_HOME 可以覆盖。
+  const home = resolveRuntimeHome({
+    ...process.env,
+    CUCCUT_HOME: process.env.CUCCUT_HOME || (isDev ? path.resolve(app.getAppPath(), '../../.dev/cuccut-home') : ''),
+  });
+
+  const supervisor = new RuntimeSupervisor({
+    home,
+    // 默认开发态也迁移历史数据；只有调用者显式给出的 Home 才默认保持沙盒隔离。
+    legacyAutoDetect: !process.env.CUCCUT_HOME,
+    script: path.join(__dirname, 'runtime.js'),
+    allowedOrigins: devServerUrl ? [new URL(devServerUrl).origin] : [],
+    echoLogs: isDev,
+    // 正式版本的密钥与节点令牌存在系统的安全存储里（没有实现的平台如实报告不可用，不回退到文件）；开发时用明文文件，
+    // 不写钥匙串；首次历史迁移可以只读旧凭据（架构设计 §2.7、§6.8）。
+    credentialStore: app.isPackaged ? 'keychain' : 'file',
+    // Worker、凭据助手、内置模板与 skill、模型数据、Web 客户端：打包脚本（tools/package-desktop.mjs）把它们放进 resources；
+    // 开发时 Runtime 从仓库里找。
+    resources: app.isPackaged ? packagedResources(process.resourcesPath) : null,
+    // 从链接导入的默认下载目录：系统的下载文件夹（Windows 的已知文件夹、Linux 的 XDG 目录），取不到时 Runtime 用 ~/Downloads。
+    downloadsDir: systemDownloadsDir(),
+    // 旧版项目导入询问的默认目录在系统的文稿 / 文档文件夹下（Windows 的已知文件夹可能被移到别的盘）。
+    documentsDir: systemDocumentsDir(),
+    systemLanguages: () => app.getPreferredSystemLanguages(),
+  });
+
+  /** 应用更新的服务；就绪之前退出时还没有。 */
+  let updates: AppUpdateService | null = null;
+  const appContents = new Set<number>();
+  let runtimeEndpoint: string | null = null;
+
+  async function connection() {
+    const target = await supervisor.connection();
+    runtimeEndpoint = target.endpoint;
+    return target;
+  }
+
+  function createWindow(): BrowserWindow {
+    // CucCut is dark only: native menus, dialogs and the window frame follow.
+    nativeTheme.themeSource = 'dark';
+    const win = new BrowserWindow({
+      width: 1280,
+      height: 820,
+      minWidth: 960,
+      minHeight: 600,
+      show: false,
+      title: 'CucCut',
+      icon: devIcon,
+      titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+      // The lights sit in the 32px window strip at the top of every page (WindowStrip), over the dark-only UI.
+      trafficLightPosition: { x: 16, y: 10 },
+      backgroundColor: '#101010',
+      webPreferences: {
+        preload: path.join(__dirname, '../preload/index.js'),
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        spellcheck: false,
+      },
+    });
+    win.once('ready-to-show', () => win.show());
+    const contentsId = win.webContents.id;
+    appContents.add(contentsId);
+    win.webContents.once('destroyed', () => appContents.delete(contentsId));
+
+    // 开发时把渲染进程的警告和错误也打到终端。
+    if (isDev) {
+      win.webContents.on('console-message', ({ level, message, sourceId, lineNumber }) => {
+        if (level === 'warning' || level === 'error') console.error(`[renderer:${level}] ${message} (${sourceId}:${lineNumber})`);
+      });
+      // i18n-ignore: 开发时打到终端的诊断日志
+      win.webContents.on('render-process-gone', (_event, details) => console.error('[renderer] 进程退出', details));
+    }
+
+    // 窗口里只跑自己的页面；外部链接交给系统浏览器。
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    win.webContents.on('will-navigate', (event, url) => {
+      if (devServerUrl && url.startsWith(devServerUrl)) return;
+      event.preventDefault();
+      if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    });
+
+    if (devServerUrl) void win.loadURL(devServerUrl);
+    else void win.loadFile(path.join(__dirname, '../renderer/index.html'));
+    return win;
+  }
+
+  ipcMain.handle('cuccut:connection', () => connection());
+
+  // 选目录：默认是打开项目目录；界面给了标题（例如选保存位置）时用它，按钮写「选择」。标题来自渲染进程，只收短字符串。
+  ipcMain.handle('cuccut:pick-directory', async (event, request?: { title?: unknown }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const title = typeof request?.title === 'string' && request.title.trim() ? request.title.trim().slice(0, 200) : null;
+    const options: Electron.OpenDialogOptions = {
+      title: title ?? M.openProjectTitle,
+      buttonLabel: title ? M.choose : M.open,
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+
+  ipcMain.handle('cuccut:pick-media', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options: Electron.OpenDialogOptions = {
+      title: M.importAssetsTitle,
+      buttonLabel: M.importButton,
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: M.mediaFilter,
+          extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'png', 'jpg', 'jpeg', 'gif', 'webp'],
+        },
+        { name: M.allFilesFilter, extensions: ['*'] },
+      ],
+    };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle('cuccut:pick-files', async (event, raw: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const opts = (raw ?? {}) as { title?: unknown; buttonLabel?: unknown; filters?: unknown; multiple?: unknown };
+    const options: Electron.OpenDialogOptions = {
+      title: dialogText(opts.title) ?? M.openFileTitle,
+      buttonLabel: dialogText(opts.buttonLabel) ?? M.open,
+      properties: opts.multiple === true ? ['openFile', 'multiSelections'] : ['openFile'],
+      filters: dialogFilters(opts.filters),
+    };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle('cuccut:pick-message-files', async (event, raw: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return [];
+    const opts = (raw ?? {}) as { title?: unknown; filesLabel?: unknown; foldersLabel?: unknown; cancelLabel?: unknown; images?: unknown };
+    const title = dialogText(opts.title) ?? M.openFileTitle;
+    let folders = false;
+    if (process.platform !== 'darwin') {
+      const { response } = await dialog.showMessageBox(win, {
+        title,
+        message: title,
+        buttons: [
+          dialogText(opts.filesLabel) ?? M.openFileTitle,
+          dialogText(opts.foldersLabel) ?? M.openProjectTitle,
+          dialogText(opts.cancelLabel) ?? M.close,
+        ],
+        defaultId: 0,
+        cancelId: 2,
+      });
+      if (response === 2) return [];
+      folders = response === 1;
+    }
+    const result = await dialog.showOpenDialog(win, {
+      title,
+      buttonLabel: M.choose,
+      properties: messageFileProperties(process.platform, folders),
+    });
+    return result.canceled ? [] : messageFiles(result.filePaths, opts.images === true);
+  });
+
+  /** 系统存储对话框：选保存位置与保存文件共用。取消时 null。 */
+  const showSaveDialog = async (event: Electron.IpcMainInvokeEvent, raw: unknown): Promise<string | null> => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const opts = (raw ?? {}) as { title?: unknown; buttonLabel?: unknown; defaultName?: unknown; defaultDir?: unknown; filters?: unknown };
+    const defaultPath = saveDialogPath(opts.defaultName, opts.defaultDir);
+    const options: Electron.SaveDialogOptions = {
+      title: dialogText(opts.title) ?? M.save,
+      buttonLabel: dialogText(opts.buttonLabel) ?? M.save,
+      filters: dialogFilters(opts.filters),
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+      ...(defaultPath ? { defaultPath } : {}),
+    };
+    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    return result.canceled || !result.filePath ? null : result.filePath;
+  };
+
+  ipcMain.handle('cuccut:pick-save-path', (event, raw: unknown) => showSaveDialog(event, raw));
+
+  // 把界面手上的文件存到用户在对话框里选的位置（设计稿的导出，docs/design/canvas §8.3）。只收应用窗口主框架发来的；
+  // 路径只由对话框给，渲染进程只给内容与建议的文件名。
+  ipcMain.handle('cuccut:save-file', async (event, raw: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) return null;
+    const data = saveFileData((raw as { data?: unknown } | null)?.data);
+    const file = await showSaveDialog(event, raw);
+    if (file) await fs.writeFile(file, data);
+    return file;
+  });
+
+  ipcMain.handle('cuccut:reveal', (_event, target: unknown) => {
+    // 界面拼出来的路径可能混着 `/` 与 `\`（目录接相对路径），Windows 上先规范成本机的分隔符。
+    if (typeof target === 'string' && path.isAbsolute(target)) shell.showItemInFolder(path.normalize(target));
+  });
+
+  ipcMain.handle('cuccut:open-file', (event, target: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender) || event.senderFrame !== event.sender.mainFrame) return null;
+    return openLocalFile(target, (file) => shell.openPath(file));
+  });
+
+  // 界面语言：界面换语言（启动时也一次）时告诉主进程，只认出货语言；只收应用窗口发来的（网页标签没有预加载脚本，发不了）。
+  ipcMain.on('cuccut:set-locale', (event, value: unknown) => {
+    if (!BrowserWindow.fromWebContents(event.sender)) return;
+    const locale = localeFromRenderer(value);
+    if (locale) setLocale(locale);
+  });
+
+  /** 按当前语言设应用菜单；已经显示的菜单换掉。对话框在打开时取文案，不用重建。 */
+  function installAppMenu(): void {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(process.platform, app.name)));
+  }
+
+  onLocaleChange(() => {
+    if (app.isReady()) installAppMenu();
+  });
+
+  // 网页标签：独立分区的原生网页视图（架构设计 §12.10）。
+  installWebTabs({ appOrigins: devServerUrl ? [new URL(devServerUrl).origin] : [] });
+
+  app.whenReady().then(() => {
+    if (isDev && devServerUrl) {
+      const appOrigin = new URL(devServerUrl).origin;
+      const requests = session.defaultSession.webRequest;
+      requests.onBeforeSendHeaders((details, callback) => {
+        const trusted = isDesktopRuntimeRequest(details, runtimeEndpoint, appOrigin, appContents);
+        callback({ requestHeaders: trusted ? desktopRuntimeHeaders(details.requestHeaders) : details.requestHeaders });
+      });
+      requests.onHeadersReceived((details, callback) => {
+        const trusted = isDesktopRuntimeRequest(details, runtimeEndpoint, appOrigin, appContents);
+        callback({ responseHeaders: trusted ? desktopRuntimeResponseHeaders(details.responseHeaders ?? {}, appOrigin) : details.responseHeaders });
+      });
+    }
+    // 界面还没告诉主进程语言之前，菜单与对话框按系统的首选语言（CUCCUT_LOCALE 设了时以它为准）。
+    setLocale(startupLocale(app.getPreferredSystemLanguages()));
+    installAppMenu();
+    // 先把 Runtime 拉起来，窗口加载期间并行进行。
+    // i18n-ignore: 诊断日志，只打到主进程的终端
+    void connection().catch((error) => console.error('[cuccut] Runtime 启动失败', error));
+    // 应用自动更新（架构设计 §2.6）：检查、下载、校验都在 Main 里，Runtime 不参与。
+    updates = installAppUpdates();
+    // macOS 的 Dock 图标不认 BrowserWindow 的 icon，开发态单独设。
+    if (devIcon && process.platform === 'darwin') app.dock?.setIcon(devIcon);
+    createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
+
+  let quitting = false;
+  app.on('before-quit', (event) => {
+    if (quitting) return;
+    quitting = true;
+    event.preventDefault();
+    void supervisor.stop().finally(async () => {
+      // 退出即安装（架构设计 §2.6）：Runtime 停下之后把已下载、已就位的更新交给换包程序，换完不重新打开。有时限、不抛；
+      // 「重启并更新」引起的退出已在安装中，这里什么都不做。之后停掉还在跑的下载与校验。
+      await updates?.installOnQuit();
+      updates?.dispose();
+      app.quit();
+    });
+  });
+}
+
+function systemDownloadsDir(): string | null {
+  try {
+    return app.getPath('downloads');
+  } catch {
+    return null;
+  }
+}
+
+function systemDocumentsDir(): string | null {
+  try {
+    return app.getPath('documents');
+  } catch {
+    return null;
+  }
+}
+
+/** 渲染进程给的对话框参数：只收认得的字段，类型不对的丢掉。 */
+function dialogFilters(value: unknown): Electron.FileFilter[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const filters = value.flatMap((f: unknown) => {
+    const { name, extensions } = (f ?? {}) as { name?: unknown; extensions?: unknown };
+    if (typeof name !== 'string' || !Array.isArray(extensions)) return [];
+    const exts = extensions.filter((e): e is string => typeof e === 'string' && /^(\*|[A-Za-z0-9]{1,16})$/.test(e));
+    return exts.length ? [{ name: name.slice(0, 100), extensions: exts }] : [];
+  });
+  return filters.length ? filters : undefined;
+}
+
+function dialogText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.slice(0, 100) : undefined;
+}

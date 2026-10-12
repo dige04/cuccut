@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const ko: MusicLocalMessages = {
+  defaultDesc: '음악을 생성할 때 미리 선택됩니다. 기본값이 없으면 모델을 직접 고르며, 직접 고른 선택이 우선합니다.',
+  cloudDefault: (name) => `기본값은 ${name}입니다. 여기서 로컬 모델을 고르면 그 모델로 바뀝니다.`,
+  noInstalled: '설치된 음악 모델이 아직 없습니다. 먼저 아래에서 하나를 다운로드하세요.',
+  licenseUse: '이 모델로 만든 음악도 비상업적 콘텐츠에만 사용할 수 있습니다. 상업적으로 쓸 영상에는 다른 음악을 사용하세요.',
+  style: '스타일',
+  mode: '형식',
+  note: (seconds, steps, eta) => `미리 듣기는 ${seconds}초${steps !== null ? `, ${steps}단계` : ''}로 고정되며 사전 구성은 하지 않습니다. 이 모델과 내장 음악 엔진이 소리를 낼 수 있는지만 확인합니다. ${eta}.`,
+  songNote: '노래는 내장된 짧은 샘플 가사를 사용합니다.',
+  toolNote: '본격적인 배경 음악은 도구 › 음악 생성에서 만드세요.',
+  openTool: '음악 생성 열기',
+  generate: '미리 듣기 생성',
+  again: '다시 생성',
+  cancel: '취소',
+  busy: '생성 중…',
+  stalePrefix: '이전 · ',
+  stale: '이 클립은 이전에 고른 설정으로 만들었습니다. 스타일이나 형식을 바꾼 뒤 “미리 듣기 생성”을 클릭하면 새로 들을 수 있습니다.',
+  download: '다운로드',
+  resultLabel: '미리 듣기 결과',
+  loadingAudio: '오디오를 불러오는 중…',
+  audioFailed: (message) => `오디오를 불러오지 못했습니다: ${message}`,
+  downloadFailed: (message) => `다운로드하지 못했습니다: ${message}`,
+  fileName: (name) => `${name} 미리 듣기.wav`,
+};

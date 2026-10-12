@@ -1,0 +1,987 @@
+import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { silentLogger } from '@cuccut/harness';
+import { ModelServiceStore } from '@cuccut/models';
+import { FileCredentialStore, SettingsStore, readJson, resolveRuntimeHome, writeJsonAtomic } from '@cuccut/runtime-storage';
+import { LegacyUpgrade, defaultLegacyImportDirectory, legacyVolumeOf } from './legacy-upgrade.ts';
+import { legacyRoots, readLegacySource } from './legacy-upgrade-sources.ts';
+import { importLegacyCloud } from './legacy-upgrade-cloud.ts';
+import { importLegacySettings } from './legacy-upgrade-settings.ts';
+
+let dir: string;
+beforeEach(async () => {
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cuccut-upgrade-test-'));
+});
+afterEach(async () => {
+  await fs.rm(dir, { recursive: true, force: true });
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+const secret = 'sk-fixture-legacy-key-123456';
+/**
+ * 旧版数据、新 Home 与模型目录。`decided`（缺省）预先记下「导入到 `imported`」，迁移机制的用例不必每次回答询问；
+ * 询问本身的用例传 false。
+ */
+async function setup({ decided = true }: { decided?: boolean } = {}) {
+  const root = path.join(dir, 'legacy');
+  const home = resolveRuntimeHome({ CUCCUT_HOME: path.join(dir, 'new') });
+  const imported = path.join(dir, 'Documents', 'CucCut');
+  if (decided) {
+    await writeJsonAtomic(path.join(home.root, 'store', 'legacy-upgrade.json'), {
+      schemaVersion: 1,
+      projectImport: { decision: 'import', directory: imported },
+      sources: {},
+    });
+  }
+  const log = silentLogger;
+  await writeJsonAtomic(path.join(root, 'config.json'), {
+    values: { 'models.dir': path.join(dir, 'models'), 'download.dir': path.join(dir, 'downloads') },
+  });
+  await writeJsonAtomic(path.join(root, 'app-v2-settings.json'), { language: 'ja', appAutoUpdate: false });
+  await writeJsonAtomic(path.join(root, 'secrets.json'), { openai: { fields: { apiKey: secret } } });
+  await writeJsonAtomic(path.join(root, 'projects', 'old', 'doc.json'), { words: [] });
+  const models = await ModelServiceStore.open(home, new FileCredentialStore(home.modelCredentialsFile));
+  const openProject = vi.fn(async () => {});
+  return { root, home, log, models, openProject, imported, deps: { models, engine: '/fixture/engine', openProject, env: async () => ({}) } };
+}
+async function finish(upgrade: LegacyUpgrade) {
+  await vi.waitFor(() => expect(upgrade.active).toBe(false));
+}
+async function prompted(upgrade: LegacyUpgrade) {
+  await vi.waitFor(() => expect(upgrade.prompt()).not.toBeNull());
+  return upgrade.prompt()!;
+}
+
+describe('legacy startup upgrade', () => {
+  it('isolates custom homes and discovers platform-specific roots', () => {
+    expect(legacyRoots({ CUCCUT_HOME: '/test' }, 'darwin', '/user')).toEqual([]);
+    expect(legacyRoots({ CUCCUT_HOME: '/user/.cuccut' }, 'darwin', '/user')).toEqual(legacyRoots({}, 'darwin', '/user'));
+    expect(legacyRoots({ APPDATA: 'C:\\Users\\Jim\\AppData\\Roaming' }, 'win32', 'C:\\Users\\Jim')).toEqual([
+      'C:\\Users\\Jim\\AppData\\Roaming\\ccut',
+      'C:\\Users\\Jim\\AppData\\Roaming\\CucCut',
+    ]);
+    expect(legacyRoots({}, 'linux', '/user')).toEqual(['/user/.config/ccut']);
+    expect(legacyRoots({}, 'darwin', '/user')).toContain('/user/Library/Application Support/CucCut/cli');
+    expect(legacyRoots({ CUCCUT_HOME: '/test', CUCCUT_LEGACY_ROOT: '/old' }, 'darwin', '/user')).toEqual(['/old']);
+  });
+  it.skipIf(process.platform === 'win32')('imports settings, secrets and projects once, leaving source bytes untouched', async () => {
+    const s = await setup();
+    const original = await fs.readFile(path.join(s.root, 'secrets.json'), 'utf8');
+    const importProject = vi.fn(async (_request: { version: number }) => {});
+    const options = { ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin' as const };
+    const first = new LegacyUpgrade(options);
+    await first.prepare();
+    first.start(s.deps);
+    await finish(first);
+    const settings = new SettingsStore(s.home.settingsFile);
+    await settings.load();
+    expect(settings.get('models.dir')).toBe(path.join(dir, 'models'));
+    expect(settings.get('downloads.directory')).toBe(path.join(dir, 'downloads'));
+    expect(settings.get('ui.language')).toBe('ja');
+    expect(settings.get('updates.autoDownload')).toBe(false);
+    expect(await s.models.credential('openai')).toBe(secret);
+    expect(importProject).toHaveBeenCalledTimes(1);
+    expect(importProject.mock.calls[0]?.[0]).toMatchObject({ version: 1 });
+    const marker = await fs.readFile(path.join(s.home.root, 'store', 'legacy-upgrade.json'), 'utf8');
+    expect(marker).not.toContain(secret);
+    expect(marker).toContain('"complete": true');
+    expect(await fs.readFile(path.join(s.root, 'secrets.json'), 'utf8')).toBe(original);
+    await settings.set({ 'downloads.directory': null });
+    const again = new LegacyUpgrade(options);
+    await again.prepare();
+    again.start(s.deps);
+    await finish(again);
+    expect(importProject).toHaveBeenCalledTimes(1);
+    await settings.load();
+    expect(settings.get('downloads.directory')).toBeNull();
+  });
+  it.skipIf(process.platform === 'win32')('retries only failures and preserves existing settings and credentials', async () => {
+    const s = await setup();
+    const settings = new SettingsStore(s.home.settingsFile);
+    await settings.load();
+    await settings.set({ 'models.dir': '/current/models' });
+    await s.models.updateProvider('openai', { credential: 'current-key', enabled: false });
+    await writeJsonAtomic(path.join(s.root, 'projects', 'v2', 'project.json'), { title: 'v2' });
+    let fail = true;
+    const importProject = vi.fn(async (request: { version: number }) => {
+      if (request.version === 1 && fail) throw new Error('failure');
+    });
+    const options = { ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin' as const };
+    const first = new LegacyUpgrade(options);
+    await first.prepare();
+    first.start(s.deps);
+    await finish(first);
+    expect(importProject).toHaveBeenCalledTimes(2);
+    const markerFile = path.join(s.home.root, 'store', 'legacy-upgrade.json');
+    expect((await readJson<any>(markerFile)).sources[s.root].complete).toBeUndefined();
+    fail = false;
+    const again = new LegacyUpgrade(options);
+    await again.prepare();
+    again.start(s.deps);
+    await finish(again);
+    expect(importProject).toHaveBeenCalledTimes(3);
+    await settings.load();
+    expect(settings.get('models.dir')).toBe('/current/models');
+    expect(await s.models.accountCredential('openai', 'main')).toBe('current-key');
+    expect(s.models.provider('openai')?.enabled).toBe(false);
+    expect((await readJson<any>(markerFile)).sources[s.root].complete).toBe(true);
+  });
+  it('discovers external registry paths, configured roots and v2 over archived v1', async () => {
+    const s = await setup();
+    const external = path.join(dir, 'external');
+    await writeJsonAtomic(path.join(external, 'project.json'), { title: 'outside' });
+    await writeJsonAtomic(path.join(s.root, 'projects.json'), { projects: [{ id: 'outside', path: external }] });
+    const source = await readLegacySource(s.root);
+    expect(source?.projects.map((p) => p.path)).toContain(external);
+  });
+  it('maps v1 paths and locale without overriding v2 values', async () => {
+    const s = await setup();
+    const settings = new SettingsStore(s.home.settingsFile);
+    await settings.load();
+    const source = (await readLegacySource(s.root))!;
+    source.config = {};
+    source.preferences = {};
+    await importLegacySettings(settings, source, { 'vk-models-dir': '~/models', 'vk-url-savedir': '/old/downloads', 'vk-lang': 'zh-TW' });
+    expect(settings.get('ui.language')).toBe('zh-Hant');
+    expect(settings.get('models.dir')).toBe(path.join(os.homedir(), 'models'));
+  });
+  it('maps the old ModelScope download source to its v3 base URL and leaves the old CDN unset', async () => {
+    const s = await setup();
+    const settings = new SettingsStore(s.home.settingsFile);
+    await settings.load();
+    const source = (await readLegacySource(s.root))!;
+    source.preferences = {};
+    source.config = { 'models.endpoint': 'modelscope' };
+    await importLegacySettings(settings, source);
+    expect(settings.get('models.downloadEndpoint')).toBe('https://www.modelscope.cn');
+    await settings.set({ 'models.downloadEndpoint': null });
+    source.config = {};
+    await importLegacySettings(settings, source, { 'vk-download-source': 'cdn' });
+    expect(settings.get('models.downloadEndpoint')).toBeNull();
+  });
+  it('reads the old macOS vault, defers denied credentials, and never leaks secrets', async () => {
+    const s = await setup();
+    await fs.rm(path.join(s.root, 'secrets.json'));
+    await writeJsonAtomic(path.join(s.root, 'key-masks.json'), { keys: { openai: {}, anthropic: {} } });
+    const source = (await readLegacySource(s.root))!;
+    const checkpoint = vi.fn(async () => {});
+    const keychain = vi.fn(async (_service: string, account: string) => {
+      if (account === '__provider-vault-v1') return { providers: { openai: { fields: { apiKey: secret } } } };
+      throw new Error(secret);
+    });
+    const result = await importLegacyCloud(source, s.models, [], checkpoint, { platform: 'darwin', keychain });
+    expect(result.done).toEqual(['openai']);
+    expect(result.pending).toEqual(['anthropic']);
+    expect(JSON.stringify(result)).not.toContain(secret);
+    expect(await s.models.credential('openai')).toBe(secret);
+  });
+  it('does not open the old vault for completed, existing, plaintext or remote credentials', async () => {
+    const s = await setup();
+    await s.models.updateProvider('google', { enabled: false, credential: 'current-key' });
+    await writeJsonAtomic(path.join(s.root, 'key-masks.json'), {
+      keys: { openai: {}, anthropic: {}, gemini: {}, 'remote-studio': {} },
+    });
+    const source = (await readLegacySource(s.root))!;
+    const keychain = vi.fn(async () => { throw new Error('must-not-read'); });
+    const checkpoint = vi.fn(async () => {});
+    const result = await importLegacyCloud(source, s.models, ['anthropic'], checkpoint, { platform: 'darwin', keychain });
+    expect(keychain).not.toHaveBeenCalled();
+    expect(result.pending).toEqual([]);
+    expect(result.done).toEqual(['openai', 'gemini']);
+    expect(await s.models.credential('openai')).toBe(secret);
+    expect(await s.models.credential('google')).toBe('current-key');
+  });
+  it('finishes credential migration when an individual entry succeeds after vault access fails', async () => {
+    const s = await setup();
+    await fs.rm(path.join(s.root, 'secrets.json'));
+    await writeJsonAtomic(path.join(s.root, 'key-masks.json'), { keys: { openai: {} } });
+    const source = (await readLegacySource(s.root))!;
+    const keychain = vi.fn(async (_service: string, account: string) => {
+      if (account === '__provider-vault-v1') throw new Error('denied');
+      return { fields: { apiKey: secret } };
+    });
+    const done: string[] = [];
+    const result = await importLegacyCloud(source, s.models, [], async (id) => { done.push(id); }, { platform: 'darwin', keychain });
+    expect(result).toMatchObject({ done: ['openai'], pending: [] });
+    keychain.mockClear();
+    await importLegacyCloud(source, s.models, done, async () => {}, { platform: 'darwin', keychain });
+    expect(keychain).not.toHaveBeenCalled();
+  });
+});
+
+it('reads TOML settings with JSON taking precedence', async () => {
+  const s = await setup();
+  await fs.writeFile(
+    path.join(s.root, 'config.toml'),
+    '[models]\ndir = "/toml/models"\n[download]\ndir = "/toml/downloads"\n[llm]\ndefault = "provider:openai/gpt-fixture"\n',
+  );
+  const source = (await readLegacySource(s.root))!;
+  expect(source.config['models.dir']).toBe(path.join(dir, 'models'));
+  expect(source.config['llm.default']).toBe('provider:openai/gpt-fixture');
+});
+
+it('imports a custom cloud endpoint and the default model without making API calls', async () => {
+  const s = await setup();
+  const source = (await readLegacySource(s.root))!;
+  source.config['llm.providers.acme.baseUrl'] = 'http://127.0.0.1:9999/v1';
+  source.config['llm.default'] = 'provider:acme/my-model · legacy label';
+  source.cloud.providers = [{ id: 'acme', sdk: 'OpenAiCompatible', name: 'My endpoint', models: [{ id: 'my-model', kind: 'llm' }] }];
+  await writeJsonAtomic(path.join(s.root, 'secrets.json'), { acme: { fields: { apiKey: secret } } });
+  const result = await importLegacyCloud(source, s.models, [], async () => {}, { allowKeychain: false });
+  expect(result.pending).toEqual([]);
+  expect(s.models.provider('custom:acme')?.endpoint).toBe('http://127.0.0.1:9999/v1');
+  expect(s.models.getDefault('generateText')).toEqual({ providerId: 'custom:acme', modelId: 'my-model' });
+});
+
+it.skipIf(
+  !existsSync(process.env.CUCCUT_ENGINE_HOST ?? path.resolve(`target/debug/engine-host${process.platform === 'win32' ? '.exe' : ''}`)),
+)(
+  'wires startup migration into the real Runtime and reopens without reimporting',
+  async () => {
+    const { startRuntime } = await import('./runtime.ts');
+    const { root, home, imported } = await setup();
+    await fs.rm(path.join(root, 'projects'), { recursive: true });
+    await writeJsonAtomic(path.join(root, 'projects', 'blank', 'project.json'), { formatVersion: '0.1', title: 'Imported title' });
+    await writeJsonAtomic(path.join(root, 'projects', 'second', 'project.json'), { formatVersion: '0.1', title: 'Second video' });
+    vi.stubEnv('CUCCUT_LEGACY_ROOT', root);
+    vi.stubEnv('CUCCUT_HOME', home.root);
+    const engine = process.env.CUCCUT_ENGINE_HOST ?? path.resolve(`target/debug/engine-host${process.platform === 'win32' ? '.exe' : ''}`);
+    await fs.access(engine);
+    for (let i = 0; i < 2; i++) {
+      const runtime = await startRuntime({ home, drivers: () => [], modelWorker: null, engineHost: engine, watchSpace: false });
+      try {
+        await vi.waitFor(
+          async () => {
+            const marker = await readJson<any>(path.join(home.root, 'store', 'legacy-upgrade.json'));
+            expect(marker.sources[root].complete).toBe(true);
+          },
+          { timeout: 15_000 },
+        );
+        expect(runtime.harness.listProjects()).toHaveLength(1);
+        const project = runtime.harness.listProjects()[0]!;
+        expect(project.name).toBe('CucCut');
+        expect(project.path).toBe(await fs.realpath(imported));
+        const videos = (await fs.readdir(project.path)).filter((name) => name.startsWith('legacy-'));
+        expect(videos).toHaveLength(2);
+        for (const video of videos) await fs.access(path.join(project.path, video, 'video.db'));
+        expect(runtime.settings.store.get('models.dir')).toBe(path.join(dir, 'models'));
+      } finally {
+        await runtime.close();
+      }
+    }
+  },
+  30_000,
+);
+
+it.skipIf(process.platform === 'win32')('cancels an in-flight import without recording completion', async () => {
+  const s = await setup();
+  let entered = false;
+  const upgrade = new LegacyUpgrade({
+    ...s,
+    roots: [s.root],
+    v1Preferences: null,
+    platform: 'darwin',
+    importProject: async (_request, signal) => {
+      entered = true;
+      await new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
+    },
+  });
+  await upgrade.prepare();
+  upgrade.start(s.deps);
+  await vi.waitFor(() => expect(entered).toBe(true));
+  await upgrade.stop();
+  const marker = await readJson<any>(path.join(s.home.root, 'store', 'legacy-upgrade.json'));
+  expect(marker.sources[s.root].complete).toBeUndefined();
+  expect(s.openProject).not.toHaveBeenCalled();
+});
+
+it.skipIf(
+  !existsSync(process.env.CUCCUT_ENGINE_HOST ?? path.resolve(`target/debug/engine-host${process.platform === 'win32' ? '.exe' : ''}`)),
+)(
+  'keeps missing-media imports uncommitted so restored media can retry',
+  async () => {
+    const { runProjectImport } = await import('./legacy-upgrade.ts');
+    const source = path.join(dir, 'missing-media');
+    const media = path.join(source, 'source.wav');
+    await writeJsonAtomic(path.join(source, 'project.json'), {
+      formatVersion: '0.1',
+      title: 'Missing',
+      media: { path: media, kind: 'audio', duration: 1 },
+    });
+    const request = {
+      source,
+      version: 2 as const,
+      entry: {},
+      target: path.join(dir, 'imported'),
+      engine: process.env.CUCCUT_ENGINE_HOST ?? path.resolve(`target/debug/engine-host${process.platform === 'win32' ? '.exe' : ''}`),
+    };
+    await expect(runProjectImport(request, process.env, new AbortController().signal)).rejects.toThrow();
+    expect(existsSync(path.join(request.target, 'video', 'video.db'))).toBe(false);
+    const wav = Buffer.alloc(44 + 32000);
+    wav.write('RIFF');
+    wav.writeUInt32LE(wav.length - 8, 4);
+    wav.write('WAVEfmt ', 8);
+    wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(16000, 24);
+    wav.writeUInt32LE(32000, 28);
+    wav.writeUInt16LE(2, 32);
+    wav.writeUInt16LE(16, 34);
+    wav.write('data', 36);
+    wav.writeUInt32LE(32000, 40);
+    await fs.writeFile(media, wav);
+    await runProjectImport(request, process.env, new AbortController().signal);
+    expect(existsSync(path.join(request.target, 'video', 'video.db'))).toBe(true);
+  },
+  30_000,
+);
+
+it('detects legacy data in the default desktop development home without a legacy-root override', async () => {
+  vi.spyOn(os, 'homedir').mockReturnValue(dir);
+  vi.stubEnv('CUCCUT_HOME', path.join(dir, 'repo', '.dev', 'cuccut-home'));
+  vi.stubEnv('CUCCUT_LEGACY_ROOT', '');
+  vi.stubEnv('CUCCUT_LEGACY_AUTO_DETECT', '1');
+  const root = path.join(dir, 'Library', 'Application Support', 'CucCut');
+  const modelsDir = path.join(dir, 'old-models');
+  await writeJsonAtomic(path.join(root, 'config.json'), { values: { 'models.dir': modelsDir } });
+  await writeJsonAtomic(path.join(root, 'projects', 'v2.ccut', 'project.json'), { title: 'Old project' });
+  const home = resolveRuntimeHome(process.env);
+  const models = await ModelServiceStore.open(home, new FileCredentialStore(home.modelCredentialsFile));
+  const importProject = vi.fn(async () => {});
+  for (let i = 0; i < 2; i++) {
+    const upgrade = new LegacyUpgrade({ home, log: silentLogger, platform: 'darwin', importProject, allowKeychain: false });
+    await upgrade.prepare();
+    upgrade.start({ models, engine: 'fixture-engine', openProject: async () => {}, env: async () => ({}) });
+    if (i === 0) {
+      const prompt = await prompted(upgrade);
+      expect(prompt.defaultDirectory).toBe(path.join(dir, 'Documents', 'CucCut'));
+      await upgrade.answer({ promptId: prompt.promptId, decision: 'import', directory: prompt.defaultDirectory });
+    }
+    await finish(upgrade);
+    expect(upgrade.prompt()).toBeNull();
+    const settings = new SettingsStore(home.settingsFile);
+    await settings.load();
+    expect(settings.get('models.dir')).toBe(modelsDir);
+  }
+  expect(importProject).toHaveBeenCalledTimes(1);
+});
+
+it('keeps an explicit sandbox isolated without the desktop opt-in', () => {
+  expect(legacyRoots({ CUCCUT_HOME: '/sandbox' }, 'darwin', '/user')).toEqual([]);
+  expect(legacyRoots({ CUCCUT_HOME: '/repo/.dev/cuccut-home', CUCCUT_LEGACY_AUTO_DETECT: '1' }, 'darwin', '/user')).toContain(
+    '/user/Library/Application Support/CucCut',
+  );
+  expect(
+    legacyRoots(
+      { CUCCUT_HOME: 'D:\\repo\\.dev\\cuccut-home', CUCCUT_LEGACY_AUTO_DETECT: '1', APPDATA: 'C:\\Users\\Jim\\AppData\\Roaming' },
+      'win32',
+      'C:\\Users\\Jim',
+    ),
+  ).toContain('C:\\Users\\Jim\\AppData\\Roaming\\ccut');
+});
+
+it('does not read the project registry or enumerate projects before Runtime readiness', async () => {
+  const s = await setup();
+  await writeJsonAtomic(path.join(s.root, 'projects', 'old', 'project.json'), { title: 'V2 fixture' });
+  await fs.writeFile(path.join(s.root, 'projects.json'), 'invalid JSON that must only be read in background');
+  const scan = vi.spyOn(fs, 'readdir');
+  const upgrade = new LegacyUpgrade({
+    ...s,
+    roots: [s.root],
+    platform: process.platform,
+    v1Preferences: null,
+    importProject: async () => {},
+  });
+  await upgrade.prepare();
+  expect(scan).not.toHaveBeenCalled();
+  const settings = new SettingsStore(s.home.settingsFile);
+  await settings.load();
+  expect(settings.get('models.dir')).toBe(path.join(dir, 'models'));
+  upgrade.start(s.deps);
+  await finish(upgrade);
+  const marker = await readJson<any>(path.join(s.home.root, 'store', 'legacy-upgrade.json'));
+  expect(marker.sources[s.root].pending).toContain('project-discovery-unavailable');
+  expect(marker.complete).toBeUndefined();
+});
+
+it('a complete migration reads only its marker, even if old data is changed or corrupted later', async () => {
+  const s = await setup();
+  await writeJsonAtomic(path.join(s.root, 'projects', 'old', 'project.json'), { title: 'V2 fixture' });
+  const missingRoot = path.join(dir, 'never-installed');
+  const options = { ...s, roots: [s.root, missingRoot], platform: process.platform, v1Preferences: null, importProject: async () => {} };
+  const first = new LegacyUpgrade(options);
+  await first.prepare();
+  first.start(s.deps);
+  await finish(first);
+  const markerFile = path.join(s.home.root, 'store', 'legacy-upgrade.json');
+  expect((await readJson<any>(markerFile)).complete).toBe(true);
+  await fs.writeFile(path.join(s.root, 'config.json'), 'broken old configuration');
+  const read = vi.spyOn(fs, 'readFile');
+  const scan = vi.spyOn(fs, 'readdir');
+  const stat = vi.spyOn(fs, 'stat');
+  const again = new LegacyUpgrade(options);
+  await again.prepare();
+  again.start(s.deps);
+  await finish(again);
+  expect(read.mock.calls.map(([file]) => String(file))).toEqual([markerFile]);
+  expect(scan).not.toHaveBeenCalled();
+  expect(stat).not.toHaveBeenCalled();
+});
+
+it('retries the cached inventory and does not launch importers for still-missing media', async () => {
+  const s = await setup();
+  await writeJsonAtomic(path.join(s.root, 'projects', 'old', 'project.json'), { title: 'V2 fixture' });
+  const missing = path.join(dir, 'offline.wav');
+  const importProject = vi.fn(async (request: { target: string }) => {
+    if (!existsSync(missing)) {
+      await writeJsonAtomic(path.join(request.target, 'import-report.json'), { assets: { missing: [missing] } });
+      throw new Error('offline');
+    }
+  });
+  const options = { ...s, roots: [s.root], platform: process.platform, v1Preferences: null, importProject };
+  const run = async () => {
+    const upgrade = new LegacyUpgrade(options);
+    await upgrade.prepare();
+    upgrade.start(s.deps);
+    await finish(upgrade);
+  };
+  await run();
+  expect(importProject).toHaveBeenCalledTimes(1);
+  const scan = vi.spyOn(fs, 'readdir');
+  await fs.writeFile(path.join(s.root, 'projects.json'), 'must not reread a discovered registry');
+  await run();
+  expect(importProject).toHaveBeenCalledTimes(1);
+  expect(scan).not.toHaveBeenCalled();
+  await fs.writeFile(missing, 'restored');
+  await run();
+  expect(importProject).toHaveBeenCalledTimes(2);
+});
+
+it('waits for user jobs and can stop promptly without starting project discovery', async () => {
+  const s = await setup();
+  await writeJsonAtomic(path.join(s.root, 'projects', 'old', 'project.json'), { title: 'V2 fixture' });
+  const scan = vi.spyOn(fs, 'readdir');
+  const importProject = vi.fn(async () => {});
+  const upgrade = new LegacyUpgrade({ ...s, roots: [s.root], platform: process.platform, v1Preferences: null, importProject });
+  await upgrade.prepare();
+  upgrade.start({ ...s.deps, isBusy: () => true });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(scan).not.toHaveBeenCalled();
+  expect(importProject).not.toHaveBeenCalled();
+  await upgrade.stop();
+  expect(upgrade.active).toBe(false);
+});
+
+it('groups distinct sources in the same project with stable, separate video paths and reports', async () => {
+  const s = await setup();
+  const other = path.join(dir, 'another-legacy-root');
+  await writeJsonAtomic(path.join(other, 'projects', 'old', 'project.json'), { title: 'Same title' });
+  const importProject = vi.fn(async () => {});
+  const upgrade = new LegacyUpgrade({ ...s, roots: [s.root, other], v1Preferences: null, importProject, allowKeychain: false });
+  await upgrade.prepare();
+  upgrade.start(s.deps);
+  await finish(upgrade);
+  const requests = importProject.mock.calls as unknown as [{ target: string; videoDirectory: true }][];
+  expect(requests).toHaveLength(2);
+  expect(new Set(requests.map(([request]) => request.target)).size).toBe(2);
+  for (const [request] of requests) {
+    expect(request.videoDirectory).toBe(true);
+    expect(path.dirname(request.target)).toBe(s.imported);
+  }
+  expect(s.openProject.mock.calls).toEqual([
+    [s.imported, undefined],
+    [s.imported, undefined],
+  ]);
+});
+
+it("keeps each imported video's last activity from the legacy project instead of the import time", async () => {
+  const s = await setup();
+  const opened = path.join(s.root, 'projects', 'opened');
+  const edited = path.join(s.root, 'projects', 'edited');
+  const longAgo = new Date('2026-01-02T03:04:05.000Z');
+  const editedAt = new Date('2026-03-04T05:06:07.000Z');
+  for (const [dir, at] of [[opened, longAgo], [edited, editedAt]] as const) {
+    await writeJsonAtomic(path.join(dir, 'project.json'), { title: path.basename(dir) });
+    await fs.utimes(path.join(dir, 'project.json'), at, at);
+  }
+  await fs.utimes(path.join(s.root, 'projects', 'old', 'doc.json'), longAgo, longAgo);
+  // 上次打开晚于项目文件的修改：取上次打开（v2 索引记 Unix 秒，v1 归档记 `modifiedAt`）；不在索引里的取项目文件的修改时间。
+  await writeJsonAtomic(path.join(s.root, 'projects.json'), { projects: [{ id: 'opened', path: opened, lastOpenedAt: 1780000000 }] });
+  await writeJsonAtomic(path.join(s.root, 'archive', 'projects.json'), [{ id: 'old', modifiedAt: '2026-05-06T07:08:09Z' }]);
+  const importProject = vi.fn(async (request: { target: string }) => {
+    await fs.mkdir(request.target, { recursive: true });
+    for (const name of ['video.db', 'video.db-wal']) await fs.writeFile(path.join(request.target, name), '');
+  });
+  const upgrade = new LegacyUpgrade({ ...s, roots: [s.root], v1Preferences: null, importProject, allowKeychain: false, platform: 'darwin' });
+  await upgrade.prepare();
+  upgrade.start(s.deps);
+  await finish(upgrade);
+  const requests = importProject.mock.calls as unknown as [{ source: string; target: string }][];
+  const target = (name: string) => requests.find(([request]) => path.basename(request.source) === name)![0].target;
+  for (const name of ['video.db', 'video.db-wal']) {
+    expect((await fs.stat(path.join(target('opened'), name))).mtime.toISOString()).toBe(new Date(1780000000_000).toISOString());
+    expect((await fs.stat(path.join(target('edited'), name))).mtime.toISOString()).toBe(editedAt.toISOString());
+    expect((await fs.stat(path.join(target('old'), name))).mtime.toISOString()).toBe('2026-05-06T07:08:09.000Z');
+  }
+});
+
+it('supplements previously completed markers with v2 service configuration without reimporting videos', async () => {
+  const s = await setup();
+  const markerFile = path.join(s.home.root, 'store', 'legacy-upgrade.json');
+  await writeJsonAtomic(markerFile, { schemaVersion: 1, complete: true, sources: {
+    [s.root]: { settings: true, cloud: true, complete: true, credentials: ['openai'], projects: {}, pending: [], unsupported: [] },
+  } });
+  await writeJsonAtomic(path.join(s.root, 'runtime', 'services.json'), { web: { autoStart: true, port: 34567 } });
+  await fs.writeFile(path.join(s.root, 'projects.json'), 'must not rescan completed projects');
+  const importProject = vi.fn(async () => {});
+  const upgrade = new LegacyUpgrade({ ...s, roots: [s.root], v1Preferences: null, importProject, allowKeychain: false });
+  await upgrade.prepare();
+  upgrade.start(s.deps);
+  await finish(upgrade);
+  expect(importProject).not.toHaveBeenCalled();
+  expect((await readJson<any>(s.home.servicesFile)).services.web).toMatchObject({ autostart: true, port: 34567 });
+  const marker = await readJson<any>(markerFile);
+  expect(marker.complete).toBe(true);
+  expect(marker.sources[s.root]).toMatchObject({ services: true, nodes: true });
+});
+
+it('imports settings even when service configuration is corrupted, then retries services after repair', async () => {
+  const s = await setup();
+  const file = path.join(s.root, 'runtime', 'services.json');
+  await writeJsonAtomic(file, { web: { port: 'invalid' } });
+  const options = { ...s, roots: [s.root], v1Preferences: null, allowKeychain: false, importProject: async () => {} };
+  const first = new LegacyUpgrade(options);
+  await first.prepare();
+  const settings = new SettingsStore(s.home.settingsFile);
+  await settings.load();
+  expect(settings.get('models.dir')).toBe(path.join(dir, 'models'));
+  first.start(s.deps);
+  await finish(first);
+  const marker = path.join(s.home.root, 'store', 'legacy-upgrade.json');
+  expect((await readJson<any>(marker)).complete).toBeUndefined();
+  await writeJsonAtomic(file, { web: { autoStart: true, port: 34567 } });
+  const again = new LegacyUpgrade(options);
+  await again.prepare();
+  again.start(s.deps);
+  await finish(again);
+  expect((await readJson<any>(marker)).complete).toBe(true);
+  expect((await readJson<any>(s.home.servicesFile)).services.web.port).toBe(34567);
+});
+
+it.skipIf(process.platform === 'win32' ||
+  !existsSync(process.env.CUCCUT_ENGINE_HOST ?? path.resolve('target/debug/engine-host')),
+)(
+  'keeps recovered v1 PCM media separate in the shared project and resumes the same video',
+  async () => {
+    const { runProjectImport } = await import('./legacy-upgrade.ts');
+    const project = path.join(dir, 'Imported');
+    for (const name of ['first', 'second']) {
+      const source = path.join(dir, name);
+      await writeJsonAtomic(path.join(source, 'doc.json'), {
+        clips: [{ id: 'clip', src: 0, start: 0, end: 1 }],
+        words: [{ id: 'word', text: 'Word.', t0: 0, t1: 0.5 }],
+      });
+      await fs.writeFile(path.join(source, 'audio16k.pcm'), Buffer.alloc(16000 * 4));
+      const target = path.join(project, `legacy-${name}`);
+      const request = {
+        source, version: 1 as const, entry: { title: name }, target, videoDirectory: true as const,
+        engine: process.env.CUCCUT_ENGINE_HOST ?? path.resolve('target/debug/engine-host'),
+      };
+      for (let attempt = 0; attempt < 2; attempt++) await runProjectImport(request, process.env, new AbortController().signal);
+      await fs.access(path.join(target, 'video.db'));
+      await fs.access(path.join(target, 'legacy-media', 'source.wav'));
+      expect((await readJson<any>(path.join(target, 'import-report.json'))).failed).toEqual([]);
+      expect(existsSync(path.join(source, 'project.json'))).toBe(false);
+    }
+  },
+  30_000,
+);
+
+describe('legacy project import prompt', () => {
+  const markerOf = (s: { home: { root: string } }) => path.join(s.home.root, 'store', 'legacy-upgrade.json');
+
+  it.skipIf(process.platform === 'win32')('asks before importing projects, then imports into the chosen folder and never asks again', async () => {
+    const s = await setup({ decided: false });
+    await writeJsonAtomic(path.join(s.root, 'projects', 'v2', 'project.json'), { title: 'V2 title' });
+    const importProject = vi.fn(async (_request: { target: string }) => {});
+    const options = { ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin' as const, allowKeychain: false };
+    const first = new LegacyUpgrade(options);
+    await first.prepare();
+    const events: unknown[] = [];
+    first.topic.subscribe(undefined, (sequenced) => events.push(sequenced.event));
+    first.start(s.deps);
+    const prompt = await prompted(first);
+    // 设置与云凭据不等回答；等回答不算后台任务（CLI 拉起的 Runtime 照常空闲退出）。
+    expect(await s.models.credential('openai')).toBe(secret);
+    expect(first.active).toBe(false);
+    expect(importProject).not.toHaveBeenCalled();
+    expect(prompt.projects.map((project) => project.title).sort()).toEqual(['V2 title', 'old']);
+    expect(prompt.projects.every((project) => project.editedAt && !Number.isNaN(Date.parse(project.editedAt)))).toBe(true);
+    expect(events).toEqual([{ type: 'prompt.updated', prompt }]);
+
+    await expect(first.answer({ promptId: 'stale', decision: 'never' })).rejects.toMatchObject({ code: 'not-found' });
+    const refused = async (directory: string) =>
+      expect(first.answer({ promptId: prompt.promptId, decision: 'import', directory })).rejects.toMatchObject({ code: 'invalid-request' });
+    await refused('relative/CucCut');
+    await refused(path.join(s.root, 'Imported'));
+    await refused(path.join(s.home.root, 'Imported'));
+    await fs.writeFile(path.join(dir, 'not-a-folder'), '');
+    await refused(path.join(dir, 'not-a-folder', 'CucCut'));
+    expect(first.prompt()).toEqual(prompt);
+
+    const chosen = path.join(dir, 'Chosen', 'CucCut');
+    await first.answer({ promptId: prompt.promptId, decision: 'import', directory: chosen });
+    await finish(first);
+    expect(first.prompt()).toBeNull();
+    expect(events.filter((event) => (event as { type: string }).type === 'prompt.updated').at(-1)).toEqual({ type: 'prompt.updated', prompt: null });
+    expect(importProject).toHaveBeenCalledTimes(2);
+    for (const [request] of importProject.mock.calls) expect(path.dirname(request.target)).toBe(chosen);
+    expect(s.openProject.mock.calls).toEqual([
+      [chosen, undefined],
+      [chosen, undefined],
+    ]);
+    const marker = await readJson<any>(markerOf(s));
+    expect(marker.projectImport).toEqual({ decision: 'import', directory: chosen });
+    expect(marker.complete).toBe(true);
+    await expect(first.answer({ promptId: prompt.promptId, decision: 'never' })).rejects.toMatchObject({ code: 'not-found' });
+
+    const again = new LegacyUpgrade(options);
+    await again.prepare();
+    again.start(s.deps);
+    await finish(again);
+    expect(again.prompt()).toBeNull();
+    expect(importProject).toHaveBeenCalledTimes(2);
+  });
+
+  it('records nothing when the prompt goes unanswered, and asks again on the next launch', async () => {
+    const s = await setup({ decided: false });
+    const importProject = vi.fn(async () => {});
+    const options = { ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin' as const, allowKeychain: false };
+    const first = new LegacyUpgrade(options);
+    await first.prepare();
+    first.start(s.deps);
+    const prompt = await prompted(first);
+    await first.stop();
+    expect(first.prompt()).toBeNull();
+    await expect(first.answer({ promptId: prompt.promptId, decision: 'never' })).rejects.toMatchObject({ code: 'not-found' });
+    const marker = await readJson<any>(markerOf(s));
+    expect(marker.projectImport).toBeUndefined();
+    expect(marker.complete).toBeUndefined();
+    expect(marker.sources[s.root]).toMatchObject({ settings: true, cloud: true });
+
+    const again = new LegacyUpgrade(options);
+    await again.prepare();
+    again.start(s.deps);
+    const next = await prompted(again);
+    expect(next.promptId).not.toBe(prompt.promptId);
+    expect(next.projects).toEqual(prompt.projects);
+    await again.stop();
+    expect(importProject).not.toHaveBeenCalled();
+  });
+
+  it('never imports after "don\'t remind me", and later launches read only the marker', async () => {
+    const s = await setup({ decided: false });
+    const importProject = vi.fn(async () => {});
+    const options = { ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin' as const, allowKeychain: false };
+    const first = new LegacyUpgrade(options);
+    await first.prepare();
+    first.start(s.deps);
+    const prompt = await prompted(first);
+    await first.answer({ promptId: prompt.promptId, decision: 'never' });
+    await finish(first);
+    const markerFile = markerOf(s);
+    const marker = await readJson<any>(markerFile);
+    expect(marker.projectImport).toEqual({ decision: 'never' });
+    expect(marker.complete).toBe(true);
+    expect(importProject).not.toHaveBeenCalled();
+    expect(existsSync(path.join(dir, 'Documents', 'CucCut'))).toBe(false);
+
+    const read = vi.spyOn(fs, 'readFile');
+    const scan = vi.spyOn(fs, 'readdir');
+    const again = new LegacyUpgrade(options);
+    await again.prepare();
+    again.start(s.deps);
+    await finish(again);
+    expect(again.prompt()).toBeNull();
+    expect(read.mock.calls.map(([file]) => String(file))).toEqual([markerFile]);
+    expect(scan).not.toHaveBeenCalled();
+    expect(importProject).not.toHaveBeenCalled();
+  });
+
+  it('keeps importing a migration started by an earlier build into its original layout without asking', async () => {
+    const s = await setup({ decided: false });
+    await writeJsonAtomic(path.join(s.root, 'projects', 'v2', 'project.json'), { title: 'Later' });
+    const started = await fs.realpath(path.join(s.root, 'projects', 'old'));
+    const earlierTarget = path.join(s.home.projectsDir, 'Imported', 'legacy-earlier');
+    await writeJsonAtomic(markerOf(s), {
+      schemaVersion: 1,
+      sources: {
+        [s.root]: {
+          settings: true, cloud: true, services: true, nodes: true, credentials: [], pending: [], unsupported: [],
+          projects: { [started]: { target: earlierTarget, videoDirectory: true } },
+        },
+      },
+    });
+    const importProject = vi.fn(async (_request: { source: string; target: string }) => {});
+    const upgrade = new LegacyUpgrade({ ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin', allowKeychain: false });
+    await upgrade.prepare();
+    const events: unknown[] = [];
+    upgrade.topic.subscribe(undefined, (sequenced) => events.push(sequenced.event));
+    upgrade.start(s.deps);
+    await finish(upgrade);
+    expect(events.filter((event) => (event as { type: string }).type === 'prompt.updated')).toEqual([]);
+    const targets = Object.fromEntries(importProject.mock.calls.map(([request]) => [path.basename(request.source), request.target]));
+    expect(targets.old).toBe(earlierTarget);
+    expect(path.dirname(targets.v2!)).toBe(path.join(s.home.projectsDir, 'Imported'));
+    expect((await readJson<any>(markerOf(s))).projectImport).toEqual({
+      decision: 'import',
+      directory: path.join(s.home.projectsDir, 'Imported'),
+    });
+  });
+
+  it('defaults to CucCut in the host documents folder', () => {
+    expect(defaultLegacyImportDirectory({ CUCCUT_DOCUMENTS_DIR: path.join(dir, 'OneDrive', 'Documents') }, dir)).toBe(
+      path.join(dir, 'OneDrive', 'Documents', 'CucCut'),
+    );
+    expect(defaultLegacyImportDirectory({}, dir)).toBe(path.join(dir, 'Documents', 'CucCut'));
+  });
+
+  it('serves the prompt over the gateway, and only the desktop app and the CLI can answer it', async () => {
+    const { startRuntime } = await import('./runtime.ts');
+    const { CucCutClient } = await import('@cuccut/client');
+    const s = await setup({ decided: false });
+    await writeJsonAtomic(path.join(s.root, 'projects', 'v2', 'project.json'), { title: 'V2 title' });
+    vi.stubEnv('CUCCUT_LEGACY_ROOT', s.root);
+    vi.stubEnv('CUCCUT_HOME', s.home.root);
+    const runtime = await startRuntime({ home: s.home, drivers: () => [], modelWorker: null, engineHost: null, watchSpace: false });
+    const clients: InstanceType<typeof CucCutClient>[] = [];
+    const connect = async (kind: 'desktop' | 'agent') => {
+      const { endpoint, token } = runtime.discovery;
+      const client = new CucCutClient({ resolve: async () => ({ endpoint, token }), client: { kind, name: 'test', version: '0' }, reconnect: false });
+      await client.connect();
+      clients.push(client);
+      return client;
+    };
+    try {
+      const desktop = await connect('desktop');
+      const seen: unknown[] = [];
+      desktop.subscribeLegacyImport({
+        snapshot: (snapshot) => seen.push(snapshot.prompt),
+        event: (event) => event.type === 'prompt.updated' && seen.push(event.prompt),
+      });
+      await vi.waitFor(async () => expect((await desktop.request('legacyImport.get', {})).prompt).not.toBeNull());
+      const prompt = (await desktop.request('legacyImport.get', {})).prompt!;
+      expect(prompt.projects.map((project) => project.title)).toContain('V2 title');
+      await vi.waitFor(() => expect(seen.at(-1)).toEqual(prompt));
+
+      const agent = await connect('agent');
+      await expect(agent.request('legacyImport.answer', { promptId: prompt.promptId, decision: 'never' })).rejects.toMatchObject({
+        code: 'forbidden',
+      });
+      expect((await desktop.request('legacyImport.get', {})).prompt).toEqual(prompt);
+
+      await desktop.request('legacyImport.answer', { promptId: prompt.promptId, decision: 'never' });
+      await vi.waitFor(() => expect(seen.at(-1)).toBeNull());
+      await vi.waitFor(async () => expect((await readJson<any>(markerOf(s))).complete).toBe(true));
+      expect((await readJson<any>(markerOf(s))).projectImport).toEqual({ decision: 'never' });
+      expect(runtime.harness.listProjects()).toEqual([]);
+      // 重试与跳过同样只给桌面界面与 CLI；不导入时没有这次的导入，什么也不排。
+      expect(await desktop.request('legacyImport.get', {})).toEqual({ prompt: null, run: null });
+      expect(await desktop.request('legacyImport.retry', {})).toEqual({ queued: 0 });
+      expect(await desktop.request('legacyImport.setSkipped', { paths: ['/old/project'], skipped: true })).toEqual({ changed: 0 });
+      await expect(agent.request('legacyImport.retry', {})).rejects.toMatchObject({ code: 'forbidden' });
+      await expect(agent.request('legacyImport.setSkipped', { paths: ['/old/project'], skipped: true })).rejects.toMatchObject({
+        code: 'forbidden',
+      });
+    } finally {
+      for (const client of clients) client.close();
+      await runtime.close();
+    }
+  }, 30_000);
+});
+
+describe('legacy project import progress', () => {
+  const markerOf = (s: { home: { root: string } }) => path.join(s.home.root, 'store', 'legacy-upgrade.json');
+  /** 旧版的 v2 项目：目录名就是标题。 */
+  const v2 = (s: { root: string }, name: string) => writeJsonAtomic(path.join(s.root, 'projects', name, 'project.json'), { title: name });
+  const byTitle = (upgrade: LegacyUpgrade) => Object.fromEntries(upgrade.run()!.items.map((item) => [item.title, item]));
+  const report = (request: { target: string }, body: object) => writeJsonAtomic(path.join(request.target, 'import-report.json'), body);
+
+  it('finds the mount point of removable and network volumes on each platform', () => {
+    expect(legacyVolumeOf('/Volumes/Extreme SSD/2025/A001.MP4', 'darwin')).toEqual({ root: '/Volumes/Extreme SSD', name: 'Extreme SSD' });
+    expect(legacyVolumeOf('/Users/me/Movies/a.mov', 'darwin')).toBeNull();
+    expect(legacyVolumeOf('/media/me/Extreme SSD/a.mov', 'linux')).toEqual({ root: '/media/me/Extreme SSD', name: 'Extreme SSD' });
+    expect(legacyVolumeOf('/run/media/me/USB/a.mov', 'linux')).toEqual({ root: '/run/media/me/USB', name: 'USB' });
+    expect(legacyVolumeOf('/mnt/nas/a.mov', 'linux')).toEqual({ root: '/mnt/nas', name: 'nas' });
+    expect(legacyVolumeOf('/home/me/a.mov', 'linux')).toBeNull();
+    expect(legacyVolumeOf('e:\\2025\\A001.MP4', 'win32')).toEqual({ root: 'E:\\', name: 'E:' });
+    expect(legacyVolumeOf('\\\\nas\\video\\a.mov', 'win32')).toEqual({ root: '\\\\nas\\video', name: 'video' });
+    expect(legacyVolumeOf('relative\\a.mov', 'win32')).toBeNull();
+  });
+
+  it.skipIf(process.platform === 'win32')('reports each project as it imports, and why the others were not imported', async () => {
+    const s = await setup();
+    for (const name of ['ok', 'offline', 'moved', 'broken', 'failed']) await v2(s, name);
+    const drive = `/Volumes/CucCut test ${path.basename(dir)}`;
+    const importProject = vi.fn(async (request: { source: string; target: string }) => {
+      const name = path.basename(request.source);
+      if (name === 'offline') {
+        await report(request, { assets: { missing: Array.from({ length: 7 }, (_, i) => `${drive}/clip-${i}.mov`) } });
+        throw new Error('offline');
+      }
+      if (name === 'moved') {
+        await report(request, { assets: { missing: [path.join(dir, 'moved.mov')] }, failed: [] });
+        throw new Error('missing');
+      }
+      if (name === 'broken') throw new Error('unreadable');
+      if (name === 'failed') {
+        await report(request, { assets: { missing: [] }, failed: ['subtitles'] });
+        throw new Error('failed');
+      }
+    });
+    const upgrade = new LegacyUpgrade({ ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin', allowKeychain: false });
+    await upgrade.prepare();
+    const runs: { state: string; items: { title: string; state: string }[] }[] = [];
+    upgrade.topic.subscribe(undefined, ({ event }) => event.type === 'run.updated' && event.run && runs.push(event.run));
+    upgrade.start(s.deps);
+    await finish(upgrade);
+
+    // 每个项目开始导入、有了结果都报一次；最后一次是跑完。
+    expect(runs[0]!.items.every((item) => item.state === 'queued')).toBe(true);
+    expect(runs.some((run) => run.items.some((item) => item.title === 'ok' && item.state === 'importing'))).toBe(true);
+    expect(runs.at(-1)!.state).toBe('finished');
+    const run = upgrade.run()!;
+    expect(run.directory).toBe(s.imported);
+    expect(run.finishedAt).not.toBeNull();
+    const items = byTitle(upgrade);
+    expect(Object.keys(items).sort()).toEqual(['broken', 'failed', 'moved', 'offline', 'ok', 'old']);
+    expect([items.ok!.state, items.old!.state]).toEqual(['imported', 'imported']);
+    expect(items.offline).toMatchObject({
+      state: 'not-imported',
+      problem: { kind: 'offline', volume: { root: drive, name: path.basename(drive) }, missingCount: 7 },
+    });
+    expect((items.offline!.problem as { missing: string[] }).missing).toHaveLength(5);
+    expect(items.moved!.problem).toEqual({ kind: 'missing', missing: [path.join(dir, 'moved.mov')], missingCount: 1 });
+    expect(items.broken!.problem).toEqual({ kind: 'unreadable' });
+    const failedTarget = importProject.mock.calls.find(([request]) => path.basename(request.source) === 'failed')![0].target;
+    expect(items.failed!.problem).toEqual({ kind: 'failed', report: path.join(failedTarget, 'import-report.json') });
+    // 没导入的记成待办，下次启动再试；这个来源还没完成。
+    const marker = await readJson<any>(markerOf(s));
+    expect(marker.sources[s.root].pending.filter((todo: string) => todo.startsWith('project:'))).toHaveLength(4);
+    expect(marker.sources[s.root].complete).toBeUndefined();
+  });
+
+  it.skipIf(process.platform === 'win32')('retries, skips and un-skips; skipped projects are never imported again', async () => {
+    const s = await setup();
+    for (const name of ['moved', 'broken']) await v2(s, name);
+    const media = path.join(dir, 'moved.mov');
+    const importProject = vi.fn(async (request: { source: string; target: string }) => {
+      const name = path.basename(request.source);
+      if (name === 'moved' && !existsSync(media)) {
+        await report(request, { assets: { missing: [media] }, failed: [] });
+        throw new Error('missing');
+      }
+      if (name === 'broken') throw new Error('unreadable');
+    });
+    const options = { ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin' as const, allowKeychain: false };
+    const upgrade = new LegacyUpgrade(options);
+    await upgrade.prepare();
+    upgrade.start(s.deps);
+    await finish(upgrade);
+    const { moved, broken } = byTitle(upgrade);
+    expect([moved!.state, broken!.state]).toEqual(['not-imported', 'not-imported']);
+
+    // 文件还没放回：重试还是没导入，原因不变。点名的路径之外不动。
+    expect(await upgrade.retry([moved!.path])).toBe(1);
+    expect(byTitle(upgrade).moved!.state).not.toBe('not-imported');
+    expect(byTitle(upgrade).broken!.state).toBe('not-imported');
+    expect(upgrade.active).toBe(true);
+    await finish(upgrade);
+    expect(byTitle(upgrade).moved!.problem).toEqual({ kind: 'missing', missing: [media], missingCount: 1 });
+    expect(upgrade.run()!.state).toBe('finished');
+
+    // 放回之后重试：导入了，待办里没有它了。
+    await fs.writeFile(media, 'restored');
+    expect(await upgrade.retry()).toBe(2);
+    await finish(upgrade);
+    expect(byTitle(upgrade).moved!.state).toBe('imported');
+    expect(byTitle(upgrade).broken!.state).toBe('not-imported');
+    expect(await upgrade.retry([moved!.path])).toBe(0);
+
+    // 跳过读不出来的：记下，不再是待办，来源算完成。
+    expect(await upgrade.setSkipped([broken!.path], true)).toBe(1);
+    expect(byTitle(upgrade).broken).toMatchObject({ state: 'skipped', problem: { kind: 'unreadable' } });
+    let marker = await readJson<any>(markerOf(s));
+    expect(marker.sources[s.root].skipped).toEqual([broken!.path]);
+    expect(marker.sources[s.root].pending).toEqual([]);
+    expect(marker.complete).toBe(true);
+
+    // 撤销跳过：放回原来的原因，又是待办，不自动重新导入。
+    const calls = importProject.mock.calls.length;
+    expect(await upgrade.setSkipped([broken!.path], false)).toBe(1);
+    expect(byTitle(upgrade).broken).toMatchObject({ state: 'not-imported', problem: { kind: 'unreadable' } });
+    expect(importProject.mock.calls.length).toBe(calls);
+    marker = await readJson<any>(markerOf(s));
+    expect(marker.sources[s.root].skipped).toBeUndefined();
+    expect(marker.complete).toBeUndefined();
+
+    // 再跳过，下次启动不再导入它，也没有要导入的。
+    await upgrade.setSkipped([broken!.path], true);
+    await upgrade.stop();
+    const again = new LegacyUpgrade(options);
+    await again.prepare();
+    again.start(s.deps);
+    await finish(again);
+    expect(again.run()).toBeNull();
+    expect(importProject.mock.calls.length).toBe(calls);
+  });
+
+  it.skipIf(process.platform === 'win32')('re-imports a project skipped on an earlier launch when asked, alongside the ones still to import', async () => {
+    const s = await setup();
+    for (const name of ['skipped', 'later']) await v2(s, name);
+    const skippedPath = await fs.realpath(path.join(s.root, 'projects', 'skipped'));
+    let ready = false;
+    const importProject = vi.fn(async (request: { source: string }) => {
+      if (path.basename(request.source) === 'later' && !ready) throw new Error('unreadable');
+    });
+    await writeJsonAtomic(markerOf(s), {
+      schemaVersion: 1,
+      projectImport: { decision: 'import', directory: s.imported },
+      sources: { [s.root]: { credentials: [], projects: {}, pending: [], unsupported: [], skipped: [skippedPath] } },
+    });
+    const upgrade = new LegacyUpgrade({ ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin', allowKeychain: false });
+    await upgrade.prepare();
+    upgrade.start(s.deps);
+    await finish(upgrade);
+    expect(byTitle(upgrade).skipped).toEqual(expect.objectContaining({ state: 'skipped', problem: null }));
+    expect(importProject.mock.calls.map(([request]) => path.basename(request.source)).sort()).toEqual(['later', 'old']);
+    // 更早跳过的没有原因：撤销跳过就重新导入。
+    expect(await upgrade.setSkipped([skippedPath], false)).toBe(1);
+    await finish(upgrade);
+    expect(byTitle(upgrade).skipped!.state).toBe('imported');
+    expect((await readJson<any>(markerOf(s))).sources[s.root].skipped).toBeUndefined();
+  });
+
+  it.skipIf(process.platform === 'win32')('pauses while other jobs run and says so', async () => {
+    const s = await setup();
+    await v2(s, 'second');
+    let busy = false;
+    const importProject = vi.fn(async () => {
+      busy = true;
+    });
+    const upgrade = new LegacyUpgrade({ ...s, roots: [s.root], v1Preferences: null, importProject, platform: 'darwin', allowKeychain: false });
+    await upgrade.prepare();
+    upgrade.start({ ...s.deps, isBusy: () => busy });
+    await vi.waitFor(() => expect(upgrade.run()?.state).toBe('waiting'));
+    expect(importProject).toHaveBeenCalledTimes(1);
+    expect(upgrade.active).toBe(true);
+    busy = false;
+    await finish(upgrade);
+    expect(upgrade.run()!.state).toBe('finished');
+    expect(upgrade.run()!.items.map((item) => item.state)).toEqual(['imported', 'imported']);
+  });
+});

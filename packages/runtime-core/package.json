@@ -1,0 +1,33 @@
+{
+  "name": "@cuccut/runtime-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cuccut/agent-drivers": "*",
+    "@cuccut/code-runtime": "*",
+    "@cuccut/design": "*",
+    "@cuccut/design-system": "*",
+    "@cuccut/editor-wasm": "*",
+    "@cuccut/harness": "*",
+    "@cuccut/jobs": "*",
+    "@cuccut/legacy-import": "*",
+    "@cuccut/models": "*",
+    "@cuccut/nodes": "*",
+    "@cuccut/process-host": "*",
+    "@cuccut/protocol": "*",
+    "@cuccut/providers": "*",
+    "@cuccut/runtime-storage": "*",
+    "@cuccut/slides": "*",
+    "file-type": "^22.1.1",
+    "smol-toml": "^1.9.0",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}

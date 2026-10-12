@@ -1,0 +1,13 @@
+CucCut
+Copyright (c) 2026 CucCut contributors.
+
+This product is a modified version of BaoCut (https://github.com/JimLiu/baocut),
+Copyright (c) 2026 Jim Liu and BaoCut contributors, used under the BaoCut Community
+License 1.0 (the complete text is in LICENSE). It is not an official BaoCut release and
+is not affiliated with or endorsed by the BaoCut project. Use and redistribution are
+subject to that license; commercial distribution requires a separate license from the
+BaoCut rights holders.
+
+Parts of the user interface design follow agentcut (https://github.com/0xPasho/agentcut).
+
+Third-party components are listed in THIRD_PARTY_NOTICES.md.

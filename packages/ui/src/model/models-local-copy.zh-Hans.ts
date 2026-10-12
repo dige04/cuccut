@@ -1,0 +1,38 @@
+import type { ModelsLocalMessages } from './models-local-copy.ts';
+
+export const zhHans: ModelsLocalMessages = {
+  reason: {
+    unsupported: '这台电脑不支持',
+    resource: '已停用',
+    'worker-missing': '缺 Model Worker',
+    'missing-manifest': '缺清单',
+    'missing-file': '缺文件',
+    'size-mismatch': '文件大小不符',
+    'hash-mismatch': '校验不符',
+    incomplete: '缺组件',
+    'load-failed': '加载失败',
+    relocating: '正在移动',
+  },
+  chipDefault: '默认',
+  chipLoading: '正在加载',
+  chipReady: '已加载',
+  chipBusy: '正在运行',
+  chipUnloading: '正在卸载',
+  chipUnavailable: '不可用',
+  chipMissing: (names) => `缺 ${names.join('、')}`,
+  capability: {
+    transcribe: '转写',
+    align: '对齐',
+    synthesize: '合成',
+    image: '生图',
+    separate: '分离',
+    music: '音乐',
+    diarize: '说话人区分',
+  },
+  auto: '自动选择',
+  notInstalled: (name) => `${name}（未安装）`,
+  componentName: { 'audiocpp-engine': 'audio.cpp 引擎', aligner: 'Forced aligner', speaker: '声纹嵌入', vad: 'VAD 语音活动检测', tokenizer: '分词器', segmentation: '说话人分段', codec: '语音编解码器', aux: '辅助模型' },
+  componentDesc: { 'audiocpp-engine': '跑 YuE2 的引擎 · 按平台下载 · Windows / Linux 要 Vulkan 显卡驱动', vad: '切出有人说话的段落', aligner: '把文字对到逐词时间', tokenizer: '在文字与模型的词元之间转换', speaker: '区分谁在说话', segmentation: '找出每个人开口和停下的位置', codec: '把声学 token 还原成波形', aux: '主模型要用到的附加模型' },
+  githubRelease: (repo, tag) => `GitHub 发布 ${repo} ${tag}`,
+  weights: '模型权重',
+};

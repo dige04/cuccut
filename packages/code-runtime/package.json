@@ -1,0 +1,14 @@
+{
+  "name": "@cuccut/code-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cuccut/process-host": "*",
+    "@cuccut/protocol": "*",
+    "zod": "^4.6.5"
+  }
+}

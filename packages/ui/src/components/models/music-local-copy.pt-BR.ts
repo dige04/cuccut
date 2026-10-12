@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const ptBR: MusicLocalMessages = {
+  defaultDesc: "Pré-selecionado ao gerar música. Sem padrão, você escolhe o modelo; a escolha manual sempre vence.",
+  cloudDefault: (name) => `O padrão é ${name}; escolher um modelo local aqui o substitui.`,
+  noInstalled: "Nenhum modelo de música instalado. Baixe um abaixo primeiro.",
+  licenseUse: "A música criada com ele também só pode ser usada em conteúdo não comercial; para vídeo comercial, use outra música.",
+  style: "Estilo",
+  mode: "Forma",
+  note: (seconds, steps, eta) => `A prévia é fixa em ${seconds} s${steps !== null ? ` e ${steps} passos` : ''}, sem planejamento; ela só verifica se este modelo e o motor de música dele conseguem gerar som. ${eta}.`,
+  songNote: "Uma canção usa uma letra de exemplo curta embutida.",
+  toolNote: "Para uma trilha de verdade, use Ferramentas › Gerar música.",
+  openTool: "Abrir Gerar música",
+  generate: "Gerar prévia",
+  again: "Gerar novamente",
+  cancel: "Cancelar",
+  busy: "Gerando…",
+  stalePrefix: "Anterior · ",
+  stale: "Clipe feito com escolhas anteriores. Após mudar o estilo ou a forma, clique “Gerar prévia” para ouvir a nova.",
+  download: "Baixar",
+  resultLabel: "Resultado da prévia",
+  loadingAudio: "Carregando áudio…",
+  audioFailed: (message) => `Não foi possível carregar áudio: ${message}`,
+  downloadFailed: (message) => `Não foi possível baixar: ${message}`,
+  fileName: (name) => `Prévia de ${name}.wav`,
+};

@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const vi: MusicLocalMessages = {
+  defaultDesc: 'Được chọn sẵn khi tạo nhạc. Nếu không có mặc định, bạn tự chọn mô hình; lựa chọn thủ công luôn được ưu tiên.',
+  cloudDefault: (name) => `Mặc định là ${name}; chọn một mô hình cục bộ ở đây sẽ thay thế nó.`,
+  noInstalled: 'Chưa cài mô hình nhạc nào. Hãy tải một mô hình bên dưới trước.',
+  licenseUse: 'Nhạc tạo bằng mô hình này cũng chỉ được dùng trong nội dung phi thương mại; với video dự định dùng thương mại, hãy dùng nhạc khác.',
+  style: 'Phong cách',
+  mode: 'Hình thức',
+  note: (seconds, steps, eta) => `Bản nghe thử cố định ${seconds} giây${steps !== null ? `, ${steps} bước` : ''}, không lập kế hoạch trước; chỉ kiểm tra xem mô hình này và công cụ nhạc của nó có phát ra âm thanh được không. ${eta}.`,
+  songNote: 'Bài hát dùng một đoạn lời mẫu ngắn có sẵn.',
+  toolNote: 'Để làm nhạc nền thật sự, hãy dùng Công cụ › Tạo nhạc.',
+  openTool: 'Mở Tạo nhạc',
+  generate: 'Tạo nghe thử',
+  again: 'Tạo lại',
+  cancel: 'Hủy',
+  busy: 'Đang tạo…',
+  stalePrefix: 'Trước · ',
+  stale: 'Clip này tạo bằng lựa chọn trước. Sau khi đổi phong cách hoặc hình thức, nhấp “Tạo nghe thử” để nghe bản mới.',
+  download: 'Tải xuống',
+  resultLabel: 'Kết quả nghe thử',
+  loadingAudio: 'Đang tải âm thanh…',
+  audioFailed: (message) => `Không tải được âm thanh: ${message}`,
+  downloadFailed: (message) => `Không tải xuống được: ${message}`,
+  fileName: (name) => `Nghe thử ${name}.wav`,
+};

@@ -1,0 +1,26 @@
+import type { MusicLocalMessages } from './music-local-copy.ts';
+
+export const ja: MusicLocalMessages = {
+  defaultDesc: '音楽を生成するときに最初から選択されます。既定がない場合はモデルを自分で選びます。手動で選んだものが優先されます。',
+  cloudDefault: (name) => `既定は ${name} です。ここでローカルモデルを選ぶとそちらに切り替わります。`,
+  noInstalled: '音楽モデルがまだインストールされていません。先に下からダウンロードしてください。',
+  licenseUse: 'このモデルで作成した音楽も非商用のコンテンツにのみ使用できます。商用利用する予定の動画では、別の音楽を使ってください。',
+  style: 'スタイル',
+  mode: '形式',
+  note: (seconds, steps, eta) => `試聴は ${seconds} 秒${steps !== null ? `、${steps} ステップ` : ''}に固定で、事前の構成は行いません。このモデルと内蔵の音楽エンジンが音を出せるかを確認するだけです。${eta}。`,
+  songNote: '歌入りの曲には、内蔵の短いサンプル歌詞を使います。',
+  toolNote: '本格的にBGMを作るには、ツール › 音楽を生成 を使ってください。',
+  openTool: '音楽を生成を開く',
+  generate: '試聴を生成',
+  again: 'もう一度生成',
+  cancel: 'キャンセル',
+  busy: '生成中…',
+  stalePrefix: '前回 · ',
+  stale: 'このクリップは前回の選択で作成されたものです。スタイルや形式を変えたら、「試聴を生成」をクリックして新しいものを聞いてください。',
+  download: 'ダウンロード',
+  resultLabel: '試聴結果',
+  loadingAudio: '音声を読み込み中…',
+  audioFailed: (message) => `音声を読み込めませんでした：${message}`,
+  downloadFailed: (message) => `ダウンロードできませんでした：${message}`,
+  fileName: (name) => `${name} 試聴.wav`,
+};

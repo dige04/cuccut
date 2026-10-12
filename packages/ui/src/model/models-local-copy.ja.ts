@@ -1,0 +1,38 @@
+import type { ModelsLocalMessages } from './models-local-copy.ts';
+
+export const ja: ModelsLocalMessages = {
+  reason: {
+    unsupported: 'このコンピュータでは非対応',
+    resource: '無効',
+    'worker-missing': 'Model Worker がありません',
+    'missing-manifest': 'マニフェストがありません',
+    'missing-file': 'ファイルがありません',
+    'size-mismatch': 'ファイルサイズが不一致',
+    'hash-mismatch': 'チェックサムが不一致',
+    incomplete: 'コンポーネントが不足',
+    'load-failed': '読み込めませんでした',
+    relocating: '移動中',
+  },
+  chipDefault: '既定',
+  chipLoading: '読み込み中',
+  chipReady: '読み込み済み',
+  chipBusy: '実行中',
+  chipUnloading: '解放中',
+  chipUnavailable: '使用不可',
+  chipMissing: (names) => `${names.join('、')} が不足`,
+  capability: {
+    transcribe: '文字起こし',
+    align: 'アライメント',
+    synthesize: '合成',
+    image: '画像',
+    separate: '分離',
+    music: '音楽',
+    diarize: '話者分離',
+  },
+  auto: '自動',
+  notInstalled: (name) => `${name}（未インストール）`,
+  componentName: { 'audiocpp-engine': 'audio.cpp エンジン', aligner: '強制アライナ', speaker: '話者埋め込み', vad: 'VAD（音声区間検出）', tokenizer: 'トークナイザ', segmentation: '話者セグメンテーション', codec: '音声コーデック', aux: '補助モデル' },
+  componentDesc: { 'audiocpp-engine': 'YuE2 を動かすエンジン · プラットフォームごとにダウンロード · Windows / Linux は Vulkan 対応の GPU ドライバーが必要', vad: '人が話している区間を切り出す', aligner: 'テキストを単語単位のタイミングに合わせる', tokenizer: 'テキストとモデルのトークンを相互に変換する', speaker: '話者を聞き分ける', segmentation: '各話者が話し始め、話し終える位置を見つける', codec: '音響トークンを波形に戻す', aux: 'メインモデルが使う追加のモデル' },
+  githubRelease: (repo, tag) => `GitHub リリース ${repo} ${tag}`,
+  weights: 'モデルの重み',
+};

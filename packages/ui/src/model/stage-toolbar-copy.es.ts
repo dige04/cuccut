@@ -1,0 +1,38 @@
+import type { StageToolbarMessages } from './stage-toolbar-copy.ts';
+
+export const es: StageToolbarMessages = {
+  toolLabel: {
+    color: 'Color', font: 'Fuente', size: 'Tamaño', 'text-styles': 'Estilos',
+    animation: 'Animación', transitions: 'Transiciones', volume: 'Volumen', speed: 'Velocidad',
+    adjust: 'Ajustar', border: 'Contorno', 'fill-list': 'Colores de relleno',
+    'progress-colors': 'Color', 'progress-picker': 'Estilos', 'wave-colors': 'Color', 'wave-picker': 'Estilos',
+    'counter-mode': 'Modo', 'volume-levels': 'Niveles de volumen', properties: 'Propiedades',
+    copy: 'Duplicar', arrange: 'Orden', 'save-to-brand-kit': 'Guardar en kit de marca',
+    'adjust-timing': 'Ajustar tiempos', disable: 'Desactivar clip', delete: 'Eliminar', bold: 'Negrita', italic: 'Cursiva',
+    'align-left': 'Alinear a la izquierda', 'align-center': 'Centrar', 'align-right': 'Alinear a la derecha',
+    'line-height': 'Interlineado', 'letter-spacing': 'Espaciado entre letras',
+    'flip-vertical': 'Voltear verticalmente', 'flip-horizontal': 'Voltear horizontalmente',
+    'fit-canvas': 'Ajustar al lienzo', 'fill-canvas': 'Rellenar lienzo', opacity: 'Opacidad',
+    'round-corners': 'Radio de esquina', filters: 'Filtros', effects: 'Efectos',
+    'crop-video': 'Recorte inteligente', 'replace-video': 'Reemplazar vídeo',
+    'replace-image': 'Reemplazar imagen', 'detach-audio': 'Separar audio',
+    'sub-scope': 'Línea que editar', 'sub-edit': 'Editar', 'sub-style': 'Estilos', 'sub-animation': 'Animación', case: 'Mayúsculas', 'hide-subs': 'Ocultar subtítulos',
+  },
+  offReason: {
+    animation: 'Todavía no se pueden elegir animaciones en el editor.',
+    brand: 'El material de este clip no se puede guardar en el kit de marca.',
+    roundCorners: 'La vista previa aún no dibuja esquinas redondeadas, así que no se pueden ajustar aquí.',
+    filters: 'Los filtros (LUT) son un nombre reservado en el formato de vídeo y se rechazan al escribir.',
+    crop: 'El recorte inteligente necesita un modelo y aún no tiene un punto de acceso. Próximamente.',
+    speed: 'Este clip no se reproduce a una velocidad constante, por lo que no se puede cambiar su velocidad aquí.',
+    sound: 'Este clip no tiene sonido.',
+    captionDefaultStyle: 'Estos subtítulos aún usan el estilo predeterminado. Cambia cualquier ajuste primero y luego guárdalo en el kit de marca.',
+    brandText: 'El kit de marca aún no tiene una sección de estilos de texto.',
+    brandWeb: 'El kit de marca solo está disponible en la aplicación de escritorio y la CLI.',
+  },
+  arrange: { front: 'Traer al frente', forward: 'Traer adelante', backward: 'Enviar atrás', back: 'Enviar al fondo', label: 'Cambiar orden de apilamiento' },
+  subtitleBar: 'Barra de herramientas de subtítulos',
+  disabledNotice: 'Clip desactivado. Haz clic derecho en él en la línea de tiempo para volver a activarlo.',
+  detachedNotice: 'Se separó el sonido en una nueva pista de audio. El clip de vídeo queda silenciado.',
+  textStyleLocked: (schema: string) => `Este texto usa el formato de estilo ${schema} y aún no se puede editar aquí.`,
+};

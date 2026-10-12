@@ -1,0 +1,16 @@
+{
+  "name": "@cuccut/nodes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/test-node.ts"
+  },
+  "dependencies": {
+    "@cuccut/jobs": "*",
+    "@cuccut/models": "*",
+    "@cuccut/protocol": "*",
+    "@cuccut/runtime-storage": "*"
+  }
+}

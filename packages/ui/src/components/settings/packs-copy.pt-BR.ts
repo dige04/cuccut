@@ -206,6 +206,7 @@ export const ptBR: PacksMessages = {
     webExamples: 'Os vídeos de referência são adicionados e alterados no aplicativo de desktop.',
     dialogTitle: 'Guia de estilo',
     dialogLede: 'O guia de estilo de qual pacote os agentes seguem para os vídeos deste projeto.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Guia de estilo',
     checking: 'Verificando qual guia se aplica…',
     noProject: 'Este vídeo não está em um projeto, então o estilo é decidido por conta própria.',

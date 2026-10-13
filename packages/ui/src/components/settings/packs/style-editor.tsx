@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import type { PackDetail } from '@cuccut/protocol';
-import { Check, LoaderCircle } from 'lucide-react';
+import { Check, LoaderCircle, Palette } from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from '../../../cc/ui/button.tsx';
 import { Textarea } from '../../../cc/ui/textarea.tsx';
@@ -57,7 +57,7 @@ export function StyleEditor({ detail, web, onSaved }: { detail: PackDetail; web:
 
   return (
     <section aria-labelledby={`${id}-title`} className="flex flex-col gap-4">
-      <PanelHeading title={<span id={`${id}-title`}>{S().title}</span>} hint={S().lede} />
+      <PanelHeading icon={<Palette />} title={<span id={`${id}-title`}>{S().title}</span>} hint={S().lede} />
       <div className="flex flex-col gap-2">
         <label htmlFor={`${id}-text`} className="sr-only">
           {S().textLabel}

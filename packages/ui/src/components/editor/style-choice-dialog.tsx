@@ -74,7 +74,7 @@ export function StyleChoiceDialog({ source, onClose }: { source: { projectId: Id
         <div data-cc className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>{S().dialogTitle}</DialogTitle>
-            <DialogDescription>{S().dialogLede}</DialogDescription>
+            <DialogDescription>{projectId ? S().dialogLede : S().dialogLedeNoProject}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
             <label id={`${id}-label`} className="text-sm font-medium text-foreground">

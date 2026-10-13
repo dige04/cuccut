@@ -206,6 +206,7 @@ export const ko: PacksMessages = {
     webExamples: '참조 영상은 데스크톱 앱에서 추가하고 변경합니다.',
     dialogTitle: '스타일 가이드',
     dialogLede: '이 프로젝트의 영상에 대해 에이전트가 따를 팩의 스타일 가이드를 고르세요.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: '스타일 가이드',
     checking: '적용될 가이드를 확인하는 중…',
     noProject: '이 영상은 프로젝트에 속해 있지 않아 스타일을 단독으로 정합니다.',

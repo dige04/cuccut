@@ -206,6 +206,7 @@ export const nl: PacksMessages = {
     webExamples: 'Referentievideo’s worden toegevoegd en gewijzigd in de desktopapp.',
     dialogTitle: 'Stijlgids',
     dialogLede: 'De stijlgids van welk pack agents volgen voor de video’s in dit project.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Stijlgids',
     checking: 'Bezig met nagaan welke gids geldt…',
     noProject: 'Deze video hoort niet bij een project, dus de stijl wordt apart bepaald.',

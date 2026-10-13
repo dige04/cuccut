@@ -162,7 +162,6 @@ export function PackExport() {
               value={draft.version}
               maxLength={PACK_LIMITS.version}
               spellCheck={false}
-              className="font-mono"
               onChange={(event) => set({ version: event.target.value })}
             />
           </Field>
@@ -241,7 +240,7 @@ export function PackExport() {
 
       <Group icon={<BookA />} title={E().library} hint={E().libraryHint}>
         {libraryGroups.length ? (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 pt-1">
             {libraryGroups.map((group) => (
               <div key={group.key} className="flex flex-col">
                 <p className="m-0 text-xs font-medium text-muted-foreground">{group.label}</p>

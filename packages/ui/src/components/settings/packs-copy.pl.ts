@@ -206,6 +206,7 @@ export const pl: PacksMessages = {
     webExamples: 'Filmy referencyjne dodaje się i zmienia w aplikacji desktopowej.',
     dialogTitle: 'Przewodnik stylu',
     dialogLede: 'Przewodnik stylu którego pakietu agenci stosują do filmów w tym projekcie.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Przewodnik stylu',
     checking: 'Sprawdzanie, który przewodnik obowiązuje…',
     noProject: 'Ten film nie należy do projektu, więc styl jest ustalany samodzielnie.',

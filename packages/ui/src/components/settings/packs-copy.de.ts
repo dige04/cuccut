@@ -206,6 +206,7 @@ export const de: PacksMessages = {
     webExamples: 'Referenzvideos werden in der Desktop-App hinzugefügt und geändert.',
     dialogTitle: 'Stilleitfaden',
     dialogLede: 'Welchen Stilleitfaden welches Packs Agenten für die Videos dieses Projekts befolgen.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Stilleitfaden',
     checking: 'Es wird geprüft, welcher Leitfaden gilt…',
     noProject: 'Dieses Video gehört zu keinem Projekt, daher wird der Stil eigenständig bestimmt.',

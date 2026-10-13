@@ -241,6 +241,7 @@ const en = {
     /** The Video menu's Style guide dialog (editor). */
     dialogTitle: 'Style guide',
     dialogLede: 'Which pack’s style guide agents follow for the videos in this project.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Style guide',
     checking: 'Checking which guide applies…',
     noProject: 'This video is not in a project, so the style is decided on its own.',

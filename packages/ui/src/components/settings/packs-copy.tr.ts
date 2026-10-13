@@ -206,6 +206,7 @@ export const tr: PacksMessages = {
     webExamples: 'Referans videolar masaüstü uygulamasında eklenir ve değiştirilir.',
     dialogTitle: 'Stil rehberi',
     dialogLede: 'Bu projedeki videolar için ajanların hangi paketin stil rehberini izleyeceği.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Stil rehberi',
     checking: 'Hangi rehberin geçerli olduğu kontrol ediliyor…',
     noProject: 'Bu video bir projede değil, bu yüzden stil kendi başına belirlenir.',

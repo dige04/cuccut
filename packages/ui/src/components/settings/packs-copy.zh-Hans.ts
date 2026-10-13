@@ -203,6 +203,7 @@ export const zhHans: PacksMessages = {
     webExamples: '参考视频在桌面应用中添加和修改。',
     dialogTitle: '风格指南',
     dialogLede: '智能体在此项目中为视频遵循哪个包的风格指南。',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: '风格指南',
     checking: '正在检查适用的指南…',
     noProject: '此视频不属于任何项目，因此风格独立决定。',

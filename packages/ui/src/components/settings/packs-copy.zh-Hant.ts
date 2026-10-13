@@ -203,6 +203,7 @@ export const zhHant: PacksMessages = {
     webExamples: '參考影片在桌面應用程式中新增和修改。',
     dialogTitle: '風格指南',
     dialogLede: '智慧代理在此專案中為影片遵循哪個套件的風格指南。',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: '風格指南',
     checking: '正在檢查適用的指南…',
     noProject: '此影片不屬於任何專案，因此風格獨立決定。',

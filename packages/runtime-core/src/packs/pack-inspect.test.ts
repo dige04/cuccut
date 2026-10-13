@@ -156,8 +156,9 @@ describe('inspect', () => {
     expect(error.code).toBe('invalid-request');
     expect(details(error).code).toBe('PACK_INVALID');
     const issues = details(error).issues!;
-    expect(issues.some((i) => i.startsWith('templates/tpl-a: '))).toBe(true);
-    expect(issues.some((i) => i.startsWith('skills/skill-a: '))).toBe(true);
+    // The separator after the item follows the locale (": " in English, "：" in Chinese).
+    expect(issues.some((i) => /^templates\/tpl-a\s*[:：]/.test(i))).toBe(true);
+    expect(issues.some((i) => /^skills\/skill-a\s*[:：]/.test(i))).toBe(true);
     expect(issues.some((i) => i.includes('library/voice.json'))).toBe(true);
     // The failed preview left nothing staged.
     expect(await fs.readdir(path.join(world.packsDir, '.staging'))).toEqual([]);

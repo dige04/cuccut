@@ -206,6 +206,7 @@ export const ja: PacksMessages = {
     webExamples: '参照動画の追加と変更はデスクトップアプリで行います。',
     dialogTitle: 'スタイルガイド',
     dialogLede: 'このプロジェクトの動画で、エージェントがどのパックのスタイルガイドに従うかを選びます。',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'スタイルガイド',
     checking: '適用されるガイドを確認しています…',
     noProject: 'この動画はプロジェクトに属していないため、スタイルは単独で決まります。',

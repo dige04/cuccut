@@ -206,6 +206,7 @@ export const vi: PacksMessages = {
     webExamples: 'Video tham chiếu được thêm và thay đổi trong ứng dụng desktop.',
     dialogTitle: 'Hướng dẫn phong cách',
     dialogLede: 'Hướng dẫn phong cách của gói nào để agent làm theo cho các video trong dự án này.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Hướng dẫn phong cách',
     checking: 'Đang kiểm tra hướng dẫn nào được áp dụng…',
     noProject: 'Video này không nằm trong dự án, nên phong cách được quyết định riêng.',

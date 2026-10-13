@@ -206,6 +206,7 @@ export const ru: PacksMessages = {
     webExamples: 'Справочные видео добавляются и изменяются в приложении для рабочего стола.',
     dialogTitle: 'Гид по стилю',
     dialogLede: 'Гид по стилю какого пака агенты используют для видео в этом проекте.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Гид по стилю',
     checking: 'Проверяем, какой гид применяется…',
     noProject: 'Это видео не входит в проект, поэтому стиль выбирается самостоятельно.',

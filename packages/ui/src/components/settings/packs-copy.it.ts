@@ -206,6 +206,7 @@ export const it: PacksMessages = {
     webExamples: 'I video di riferimento si aggiungono e modificano nell’app desktop.',
     dialogTitle: 'Guida di stile',
     dialogLede: 'La guida di stile di quale pack seguono gli agenti per i video di questo progetto.',
+    dialogLedeNoProject: 'Which pack’s style guide agents follow for this video.',
     choiceLabel: 'Guida di stile',
     checking: 'Verifica di quale guida si applica…',
     noProject: 'Questo video non è in un progetto, quindi lo stile viene deciso autonomamente.',

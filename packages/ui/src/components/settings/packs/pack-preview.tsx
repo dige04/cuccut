@@ -1,7 +1,24 @@
 import type { ReactNode } from 'react';
 import type { PackPreview as PackPreviewData, PackScanHit } from '@cuccut/protocol';
 import { packScanReasonText } from '@cuccut/protocol';
-import { BookA, Film, Image as ImageIcon, LayoutTemplate, Library, MessageSquareText, Package, Palette, Scale, Sparkles, TriangleAlert } from 'lucide-react';
+import {
+  BookA,
+  Captions,
+  Film,
+  Image as ImageIcon,
+  Languages,
+  LayoutTemplate,
+  Library,
+  MessageSquareText,
+  Package,
+  Palette,
+  Scale,
+  Sparkles,
+  Sticker,
+  TriangleAlert,
+  Type,
+  type LucideIcon,
+} from 'lucide-react';
 import { Badge } from '../../../cc/ui/badge.tsx';
 import { TEMPLATE_KIND_LABEL } from '../../../copy.ts';
 import { fileSizeLabel } from '../../../model/agent-skills.ts';
@@ -12,6 +29,18 @@ import { Panel, PanelHeading } from '../settings-ui.tsx';
 import { AgentText } from './packs-ui.tsx';
 
 const I = () => PACKS_COPY.import;
+
+/** The icon of a library item by its kind (`PackLibraryPreview.kind`); an unknown kind gets the library's. */
+const LIBRARY_ICON: Record<string, LucideIcon> = {
+  transcription: BookA,
+  translation: Languages,
+  color: Palette,
+  captionStyle: Captions,
+  image: ImageIcon,
+  video: Film,
+  sticker: Sticker,
+  font: Type,
+};
 
 /**
  * Everything a previewed pack carries (pack design §2.3, `PackPreview`), before anything is installed: what an agent
@@ -147,16 +176,19 @@ export function PackPreviewPanels({ preview }: { preview: PackPreviewData }) {
         <Panel className="flex flex-col gap-3">
           <PanelHeading icon={<Library />} title={I().library} />
           <ul className="m-0 flex list-none flex-col divide-y divide-foreground/8 p-0">
-            {preview.library.map((item) => (
-              <li key={item.file} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-2 text-sm">
-                <BookA aria-hidden className="size-3.5 shrink-0 self-center text-muted-foreground" />
-                <span className="text-foreground [overflow-wrap:anywhere]">{item.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {libraryKindLabel(item.kind)} · {fileSizeLabel(item.size)}
-                </span>
-                {item.duplicate ? <span className="basis-full text-xs text-muted-foreground">{I().duplicate}</span> : null}
-              </li>
-            ))}
+            {preview.library.map((item) => {
+              const KindIcon = LIBRARY_ICON[item.kind] ?? Library;
+              return (
+                <li key={item.file} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-2 text-sm">
+                  <KindIcon aria-hidden className="size-3.5 shrink-0 self-center text-muted-foreground" />
+                  <span className="text-foreground [overflow-wrap:anywhere]">{item.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {libraryKindLabel(item.kind)} · {fileSizeLabel(item.size)}
+                  </span>
+                  {item.duplicate ? <span className="basis-full text-xs text-muted-foreground">{I().duplicate}</span> : null}
+                </li>
+              );
+            })}
           </ul>
         </Panel>
       ) : null}

@@ -97,18 +97,18 @@ export function ReviewPanel({ videoId, sequenceId }: { videoId: Id; sequenceId: 
     onWaive: (reason) =>
       void act(`waive:${finding.id}`, async () => {
         const decided = await runtime.reviewWaive(videoId, finding.id, reason);
-        offerUndo(runtime, videoId, seq, decided, C.waivedToast(finding.id));
+        offerUndo(runtime, videoId, seq, decided, C.waivedToast(finding.name));
       }),
     onUnwaive: () =>
       void act(`unwaive:${finding.id}`, async () => {
         const decided = await runtime.reviewUnwaive(videoId, finding.id);
-        offerUndo(runtime, videoId, seq, decided, C.unwaivedToast(finding.id));
+        offerUndo(runtime, videoId, seq, decided, C.unwaivedToast(finding.name));
       }),
     onSeverity: (severity, reason) =>
       void act(`severity:${finding.id}`, async () => {
         const decided = await runtime.reviewSeverity(videoId, finding.id, severity, reason);
         const now = decided.result.checks.find((c) => c.id === finding.id)?.severity ?? decided.result.rubric.find((r) => r.id === finding.id)?.severity;
-        offerUndo(runtime, videoId, seq, decided, C.severityToast(finding.id, C.severityLower[now ?? severity ?? finding.severity]));
+        offerUndo(runtime, videoId, seq, decided, C.severityToast(finding.name, C.severityLower[now ?? severity ?? finding.severity]));
       }),
   });
 

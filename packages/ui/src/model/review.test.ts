@@ -12,6 +12,7 @@ import {
   parseLimit,
   rubricLine,
   severityChange,
+  shortName,
   skipText,
 } from './review.ts';
 import { answeredSince, rubricHandoff } from './review-rubric.ts';
@@ -83,6 +84,8 @@ describe('review findings in the UI’s words', () => {
     expect(groups.waived.map((f) => f.id)).toEqual(['shots']);
     expect(groups.waived[0]).toMatchObject({ waived: { reason: 'One take on purpose', by: 'user' }, lowered: { from: 'suggestion' } });
     expect(groups.holds.map((f) => f.id)).toEqual(['text-edge']);
+    // What a toast calls a finding: the metric's label, or the question itself.
+    expect(groups.open.map((f) => f.name)).toEqual(['Placeholder boxes', 'Longest blank', 'Is the hook clear?']);
     expect(groups.skipped).toEqual([
       { id: 'square-only', why: 'Not for this shape (9:16)' },
       { id: 'loud', why: 'Needs a finished export first' },
@@ -109,6 +112,14 @@ describe('review findings in the UI’s words', () => {
     expect(rubricLine({ ask: 'Q?', verdict: 'holds', note: '', evidence: '' }).detail).toBe('holds');
     expect(skipText({ id: 'x', reason: 'unknown-metric', detail: 'video.fps' })).toBe('video.fps isn’t a measurement CucCut takes');
     expect(skipText({ id: 'x', reason: 'not-asked' })).toBe('The questions haven’t been asked yet');
+  });
+});
+
+describe('shortName', () => {
+  it('keeps a short question whole and cuts a long one at a word', () => {
+    expect(shortName('  Is the hook  clear? ')).toBe('Is the hook clear?');
+    expect(shortName('Does the first shot show the product clearly enough for a viewer to recognise it?')).toBe('Does the first shot show the product clearly…');
+    expect(shortName('x'.repeat(60))).toBe(`${'x'.repeat(48)}…`);
   });
 });
 

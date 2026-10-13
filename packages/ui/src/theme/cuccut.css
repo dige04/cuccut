@@ -527,9 +527,11 @@ input[class]:not([type='checkbox']):not([type='radio']):not([type='range']):not(
   border-radius: inherit;
 }
 
-/* Toasts: agentcut's sonner — a popover-coloured card with a hairline, 2xl corners, under the top bar. */
+/* Toasts: agentcut's sonner — a popover-coloured card with a hairline, 2xl corners, under the top bar. They sit above
+ * the cc dialogs (z-50) and their backdrop, so the Undo a dialog's action offers can be reached while it is open. */
 [role='region'][data-react-aria-top-layer] {
   top: 96px;
+  z-index: 60;
 }
 [role='region'][data-react-aria-top-layer] [role='alertdialog'][data-rac] {
   background-color: var(--popover);

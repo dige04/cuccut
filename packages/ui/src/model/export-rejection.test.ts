@@ -151,6 +151,8 @@ describe('导出被拒', () => {
       expect(problem).toMatchObject({
         code: 'REVIEW_BLOCKED',
         title: 'This video doesn’t meet your standard yet',
+        // The Runtime's sentence would only repeat the title above the listed findings.
+        message: '',
         items: ['Placeholder boxes is 2. Fill or remove the placeholder boxes before delivering.', 'Length is 4.5 s.'],
         hint: 'Fix what’s listed, or open the review and let a finding stand with a reason.',
         remedy: { kind: 'open-review' },
@@ -165,6 +167,8 @@ describe('导出被拒', () => {
     const problem = explainExportError(new RpcError('conflict', 'x', { code: 'REVIEW_BLOCKED', findings: [{ id: 'odd' }] }), { kind: 'video', stage: 'rejected' });
     expect(problem.remedy).toEqual({ kind: 'open-review' });
     expect(problem.items).toEqual(['odd']);
+    // With nothing to list, the Runtime's own sentence is what says why.
+    expect(explainExportError(new RpcError('conflict', 'x', { code: 'REVIEW_BLOCKED', findings: [] }), { kind: 'video', stage: 'rejected' }).message).toBe('x');
     expect(problem.title).not.toBe('导出没有开始');
   });
 });

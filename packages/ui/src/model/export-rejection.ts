@@ -229,7 +229,8 @@ export function explainExportError(error: ErrorLike | unknown, ctx: ExplainConte
         const { said } = findingLine({ metric: f.metric, value: f.value, limit: record(f.limit) });
         return [M.reviewItem(said, text(f.fix) ?? '')];
       });
-      return { ...base, items, hint: M.reviewHint, remedy: { kind: 'open-review' } };
+      // The Runtime's sentence ("…: 2 findings stop this export") only repeats the title when the findings are listed.
+      return { ...base, ...(items.length ? { message: '' } : {}), items, hint: M.reviewHint, remedy: { kind: 'open-review' } };
     }
     case 'RESOURCE_ADMISSION_UNSATISFIABLE': {
       const dims = Array.isArray(details.dimensions) ? (details.dimensions as unknown[]).filter((d): d is string => typeof d === 'string') : [];

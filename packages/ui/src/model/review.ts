@@ -25,6 +25,8 @@ import { metricLabel } from '../components/review/review-metrics-copy.ts';
 export interface ReviewFinding {
   id: string;
   kind: 'check' | 'question';
+  /** What a person calls it in a short line (a toast): the metric's label, or the question cut to a few words. */
+  name: string;
   severity: ReviewSeverity;
   /** What was found ("Placeholder boxes is 2", or the question). */
   said: string;
@@ -107,10 +109,20 @@ export function skipText(s: ReviewSkipped): string {
   }
 }
 
+/** A question cut to fit one short line: whole words up to about 48 characters, then an ellipsis. */
+export function shortName(text: string, max = 48): string {
+  const s = text.trim().replace(/\s+/g, ' ');
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:!?]+$/, '')}…`;
+}
+
 function checkFinding(c: ReviewCheckResult): ReviewFinding {
   return {
     id: c.id,
     kind: 'check',
+    name: metricLabel(c.metric),
     severity: c.severity,
     ...findingLine(c),
     fix: c.fix,
@@ -124,6 +136,7 @@ function rubricFinding(r: RubricResult): ReviewFinding {
   return {
     id: r.id,
     kind: 'question',
+    name: shortName(r.ask) || r.id,
     severity: r.severity,
     ...rubricLine(r),
     fix: r.fix,

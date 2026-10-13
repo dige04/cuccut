@@ -112,9 +112,9 @@ const en = {
   },
   exportNote: (n: number) => (n === 1 ? '1 thing would stop this export.' : `${n} things would stop this export.`),
   openReview: 'Open the review',
-  waivedToast: (id: string) => `${id} is let stand`,
-  unwaivedToast: (id: string) => `${id} is held to the standard again`,
-  severityToast: (id: string, severity: string) => `${id} is now a ${severity} here`,
+  waivedToast: (name: string) => `${name} is let stand`,
+  unwaivedToast: (name: string) => `${name} is held to the standard again`,
+  severityToast: (name: string, severity: string) => `${name} is now a ${severity} here`,
   undo: 'Undo',
   failed: (message: string) => `Couldn’t do that: ${message}`,
   rubricPrompt: (videoName: string) =>

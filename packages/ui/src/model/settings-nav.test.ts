@@ -6,12 +6,13 @@ import {
   SETTINGS_SECTION_INFO,
   isSettingsSection,
   legacyAgentSection,
+  settingsSub,
 } from './settings-nav.ts';
 
 describe('设置分组', () => {
-  it('Agent 自成一组，在偏好设置之后、应用之前，含两个独立条目', () => {
+  it('Agent 自成一组，在偏好设置之后、应用之前：提供方、skills，然后是 packs', () => {
     expect(SETTINGS_GROUPS.map((g) => g.id)).toEqual(['preferences', 'agents', 'app']);
-    expect(SETTINGS_GROUPS.find((g) => g.id === 'agents')).toMatchObject({ label: 'Agent', keys: ['agent', 'skills'] });
+    expect(SETTINGS_GROUPS.find((g) => g.id === 'agents')).toMatchObject({ label: 'Agent', keys: ['agent', 'skills', 'packs'] });
     expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys).toEqual(['glossary', 'privacy', 'diagnostics', 'about']);
   });
 
@@ -31,6 +32,23 @@ describe('设置分组', () => {
 
   it('skills 是独立分节', () => {
     expect(isSettingsSection('skills')).toBe(true);
+  });
+
+  it('packs is a section of its own, with a label', () => {
+    expect(isSettingsSection('packs')).toBe(true);
+    expect(SETTINGS_SECTION_INFO.find((s) => s.key === 'packs')?.label).toBeTruthy();
+  });
+});
+
+describe('pages inside a section', () => {
+  it('only packs has pages: import, export or a pack id', () => {
+    expect(settingsSub('packs', 'import')).toBe('import');
+    expect(settingsSub('packs', 'export')).toBe('export');
+    expect(settingsSub('packs', 'news-desk')).toBe('news-desk');
+    expect(settingsSub('packs', 'News_Desk')).toBeUndefined();
+    expect(settingsSub('packs', 'a'.repeat(65))).toBeUndefined();
+    expect(settingsSub('packs', undefined)).toBeUndefined();
+    expect(settingsSub('skills', 'news-desk')).toBeUndefined();
   });
 });
 

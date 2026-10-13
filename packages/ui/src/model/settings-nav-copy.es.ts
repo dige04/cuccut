@@ -11,6 +11,6 @@ export const es: SettingsNavMessages = {
  },
  page: { local: 'Modelos locales', cloud: 'Modelos en la nube', voices: 'Mis voces' },
  onlyPage: { local: 'Esta categoría solo tiene modelos locales que se ejecutan en este ordenador; aún no hay modelos en la nube.', cloud: 'La generación de texto solo tiene modelos en la nube. Los agentes de código se configuran en «Agente».' },
- section: { general: 'General', shortcuts: 'Atajos', fonts: 'Fuentes', agent: 'Proveedores de agentes', skills: 'Skills', glossary: 'Glosario', privacy: 'Privacidad y permisos', diagnostics: 'Diagnóstico', about: 'Acerca de' },
+ section: { general: 'General', shortcuts: 'Atajos', fonts: 'Fuentes', agent: 'Proveedores de agentes', skills: 'Skills', packs: 'Packs', glossary: 'Glosario', privacy: 'Privacidad y permisos', diagnostics: 'Diagnóstico', about: 'Acerca de' },
  group: { preferences: 'Preferencias', agents: 'Agente', app: 'Aplicación' },
 };

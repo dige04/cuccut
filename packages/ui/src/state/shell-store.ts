@@ -18,6 +18,7 @@ import {
   isModelPage,
   isSettingsSection,
   legacyAgentSection,
+  settingsSub,
   type ModelCategory,
   type ModelPage,
   type SettingsSection,
@@ -63,7 +64,8 @@ export type Route =
   | { tab: 'home'; conversationId: Id | null; projectId: Id | null; pane?: WorkspaceItem }
   /** `from`: show only videos derived from this video ("Watch these in Space" on the short-video result page, and "View cut short videos" in the viewer). */
   | { tab: 'space'; category: SpaceCategory; projectId: Id | null; video?: FileTarget; from?: Id }
-  | { tab: 'settings'; section: SettingsSection }
+  /** `sub`: a page inside the section (`/settings/packs/<sub>`: `import`, `export` or a pack id; see `settingsSub`). */
+  | { tab: 'settings'; section: SettingsSection; sub?: string }
   | { tab: 'models'; category: ModelCategory; page?: ModelPage }
   | { tab: 'tasks'; taskId?: Id }
   | { tab: 'services'; service?: string }
@@ -669,7 +671,7 @@ export function hasSidebar(route: Route): boolean {
 /**
  * In-app links: `/home`, `/c/<conversation>`, `/p/<project>` (starts a new conversation in this project); the Home side panel tabs go in the query string
  * (`?video=` / `?file=` take a JSON FileTarget, `?files=1`, `?web=<id>&url=<address>`);
- * `/space/<category>[/<project>][?video=]`, `/settings/<section>`, `/settings/models/<category>[/<page>]`, `/tasks[/<task>]`,
+ * `/space/<category>[/<project>][?video=]`, `/settings/<section>[/<sub>]`, `/settings/models/<category>[/<page>]`, `/tasks[/<task>]`,
  * `/services[/<service>]`, `/tools[/<tool>]`.
  */
 export function hrefFor(route: Route): string {
@@ -688,7 +690,7 @@ export function hrefFor(route: Route): string {
       return (route.projectId ? `/space/${route.category}/${route.projectId}` : `/space/${route.category}`) + (params.length ? `?${params.join('&')}` : '');
     }
     case 'settings':
-      return `/settings/${route.section}`;
+      return route.sub ? `/settings/${route.section}/${route.sub}` : `/settings/${route.section}`;
     case 'models':
       return route.page ? `/settings/models/${route.category}/${route.page}` : `/settings/models/${route.category}`;
     case 'tasks':
@@ -740,7 +742,9 @@ export function parseHref(href: string): Route {
     if (a === 'local' || a === 'cloud' || a === 'voices') return { tab: 'models', category: a === 'voices' ? 'tts' : 'asr', page: a };
     // Old `/settings/agent/<tab>`: skills and permissions each go to their new locations; the rest stay in the Agent provider.
     if (a === 'agent') return { tab: 'settings', section: legacyAgentSection(b) };
-    return { tab: 'settings', section: isSettingsSection(a) ? a : 'general' };
+    const section = isSettingsSection(a) ? a : 'general';
+    const sub = settingsSub(section, b);
+    return sub ? { tab: 'settings', section, sub } : { tab: 'settings', section };
   }
   if (head === 'models') {
     const category = isModelCategory(a) ? a : 'asr';

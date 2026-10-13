@@ -26,4 +26,7 @@ export const pl: WorkspaceMessages = {
   notYet: 'Jeszcze niedostępne',
   loadFailed: 'Nie udało się wczytać',
   fontsSummary: 'Do napisów i tytułów',
+  packsBlurb:
+    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
+  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
 };

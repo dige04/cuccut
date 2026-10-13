@@ -20,7 +20,7 @@ export const ru: SettingsNavMessages = {
     shortcuts: "Сочетания клавиш",
     fonts: "Шрифты",
     agent: "Поставщики агентов",
-    skills: "Skills",
+    skills: "Skills", packs: 'Packs',
     glossary: "Глоссарий",
     privacy: "Конфиденциальность и разрешения",
     diagnostics: "Диагностика",

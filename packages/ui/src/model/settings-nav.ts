@@ -1,11 +1,11 @@
-import { live } from '@cuccut/protocol';
+import { isPackId, live, PACK_RESERVED_IDS } from '@cuccut/protocol';
 import { M } from './settings-nav-copy.ts';
 
 /**
  * Settings section table (product design §2.1, §7.6): model configuration is merged into Settings and grouped into four sections: “Preferences / Agent / Models / App”. Models keep their own type and content routing; the URLs all live under /settings/models.
  */
 
-export const SETTINGS_SECTIONS = ['general', 'shortcuts', 'fonts', 'agent', 'skills', 'glossary', 'privacy', 'diagnostics', 'about'] as const;
+export const SETTINGS_SECTIONS = ['general', 'shortcuts', 'fonts', 'agent', 'skills', 'packs', 'glossary', 'privacy', 'diagnostics', 'about'] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export const MODEL_CATEGORIES = ['asr', 'tts', 'llm', 'image', 'music', 'sep', 'vision'] as const;
@@ -73,7 +73,7 @@ const group = (id: SettingsGroupId, keys: readonly SettingsSection[]) => ({
 });
 export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; label: string; keys: readonly SettingsSection[] }[] = [
   group('preferences', ['general', 'shortcuts', 'fonts']),
-  group('agents', ['agent', 'skills']),
+  group('agents', ['agent', 'skills', 'packs']),
   group('app', ['glossary', 'privacy', 'diagnostics', 'about']),
 ];
 
@@ -92,6 +92,15 @@ export function modelCategory(key: ModelCategory): ModelCategoryInfo {
 export function modelPageFor(category: ModelCategory, page?: ModelPage | null, last?: ModelPage | null): ModelPage {
   const { pages } = modelCategory(category);
   return [page, last].find((p): p is ModelPage => !!p && pages.includes(p)) ?? pages[0]!;
+}
+
+/**
+ * The page inside a section, for the sections that have pages (`/settings/packs/<sub>`, pack design §2.1): Packs takes
+ * `import`, `export` or a pack id. Anything else, and every other section, has none (undefined).
+ */
+export function settingsSub(section: SettingsSection, sub: string | undefined): string | undefined {
+  if (section !== 'packs' || !sub) return undefined;
+  return (PACK_RESERVED_IDS as readonly string[]).includes(sub) || isPackId(sub) ? sub : undefined;
 }
 
 export function isSettingsSection(value: string | undefined): value is SettingsSection {

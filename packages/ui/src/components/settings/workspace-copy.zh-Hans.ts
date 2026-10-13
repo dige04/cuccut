@@ -24,4 +24,7 @@ export const zhHans: WorkspaceMessages = {
   notYet: '暂不可用',
   loadFailed: '加载失败',
   fontsSummary: '用于字幕与标题',
+  packsBlurb:
+    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
+  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
 };

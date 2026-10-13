@@ -91,7 +91,7 @@ export function AppShell({ platform }: { platform: string }) {
           ) : route.tab === 'services' ? (
             <ServicesPage service={route.service} />
           ) : route.tab === 'settings' ? (
-            <SettingsPage section={route.section} platform={platform} />
+            <SettingsPage section={route.section} sub={route.sub} platform={platform} />
           ) : route.tab === 'models' ? (
             <SettingsPage model={route} platform={platform} />
           ) : (

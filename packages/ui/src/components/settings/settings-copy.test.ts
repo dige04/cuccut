@@ -9,7 +9,9 @@ import { GRANTS_COPY } from './data-grants-copy.ts';
 import { FONT_COPY } from './font-settings-copy.ts';
 import { M as GENERAL } from './general-settings-copy.ts';
 import { GLOSSARY_COPY } from './glossary-copy.ts';
+import { PACKS_COPY } from './packs-copy.ts';
 import { RESOURCE_COPY } from './resource-capacity-copy.ts';
+import { W } from './workspace-copy.ts';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -43,6 +45,11 @@ describe('settings copy', () => {
     expect(GENERAL.lineLengthNote(42, null)).not.toContain('custom');
     expect(GLOSSARY_COPY.list.stats(1, '2 days ago')).toBe('1 entry · Updated 2 days ago');
     expect(GLOSSARY_COPY.terms.problems(['a', 'b'])).toBe('a; b');
+    expect(PACKS_COPY.list.emptyTitle).toBe('No packs installed');
+    expect(PACKS_COPY.list.versionLine('1.0.0', 'Hieu')).toBe('v1.0.0 · Hieu');
+    expect(PACKS_COPY.style.reason.only).toBe('It is the only installed pack with a style guide.');
+    expect(W.packCount(0)).toBe('None installed');
+    expect(W.packCount(2)).toBe('2 packs');
   });
 
   it('keeps the original Simplified Chinese text', () => {

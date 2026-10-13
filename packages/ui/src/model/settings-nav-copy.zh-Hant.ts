@@ -20,7 +20,7 @@ export const zhHant: SettingsNavMessages = {
     shortcuts: '快速鍵',
     fonts: '字型',
     agent: 'Agent 供應商',
-    skills: 'Skills',
+    skills: 'Skills', packs: 'Packs',
     glossary: '術語表',
     privacy: '隱私與權限',
     diagnostics: '診斷',

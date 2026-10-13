@@ -38,6 +38,10 @@ const routes: Route[] = [
   { tab: 'settings', section: 'agent' },
   { tab: 'settings', section: 'skills' },
   { tab: 'settings', section: 'privacy' },
+  { tab: 'settings', section: 'packs' },
+  { tab: 'settings', section: 'packs', sub: 'import' },
+  { tab: 'settings', section: 'packs', sub: 'export' },
+  { tab: 'settings', section: 'packs', sub: 'news-desk' },
   { tab: 'models', category: 'asr' },
   { tab: 'models', category: 'tts', page: 'voices' },
   { tab: 'tasks' },
@@ -71,6 +75,9 @@ describe('界面内链接', () => {
     expect(parseHref('/nope')).toEqual(HOME);
     expect(parseHref('/space/bogus')).toEqual({ tab: 'space', category: 'all', projectId: null });
     expect(parseHref('/settings/bogus')).toEqual({ tab: 'settings', section: 'general' });
+    expect(parseHref('/settings/packs/Not%20an%20id')).toEqual({ tab: 'settings', section: 'packs' });
+    expect(parseHref('/settings/skills/news-desk')).toEqual({ tab: 'settings', section: 'skills' });
+    expect(hrefFor({ tab: 'settings', section: 'packs', sub: 'news-desk' })).toBe('/settings/packs/news-desk');
     expect(parseHref('/tools/bogus')).toEqual({ tab: 'tools' });
   });
 

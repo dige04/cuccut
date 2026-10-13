@@ -24,4 +24,7 @@ export const vi: WorkspaceMessages = {
   notYet: 'Chưa hỗ trợ',
   loadFailed: 'Không tải được',
   fontsSummary: 'Dành cho phụ đề và tiêu đề',
+  packsBlurb:
+    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
+  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
 };

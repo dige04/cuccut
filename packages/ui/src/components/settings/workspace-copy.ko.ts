@@ -24,4 +24,7 @@ export const ko: WorkspaceMessages = {
   notYet: '아직 사용할 수 없음',
   loadFailed: '불러오지 못함',
   fontsSummary: '자막과 제목용',
+  packsBlurb:
+    'A way of making videos that travels: templates, skills, library items and a style guide in one folder. Import one from a folder, GitHub or a web address, or export yours to send.',
+  packCount: (n: number) => (n === 0 ? 'None installed' : n === 1 ? '1 pack' : `${n} packs`),
 };

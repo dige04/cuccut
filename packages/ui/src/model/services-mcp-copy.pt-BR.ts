@@ -55,6 +55,8 @@ export const ptBR: ServicesMcpMessages = {
     projects_list: "Listar projetos",
     skills_list: "Listar Skills",
     skills_read: "Ler Skill",
+    packs_list: 'List packs',
+    packs_read: 'Read a pack',
     library_list: "Listar biblioteca",
     library_show: "Ver item de biblioteca",
     download: "Baixar de link",

@@ -1,5 +1,5 @@
 ---
-description: Viewing, waiting for, cancelling and retrying jobs; cross-video search, video and project lists, the user library (glossaries, voices, brand assets) and the skill index; who handles settings and administration.
+description: Viewing, waiting for, cancelling and retrying jobs; cross-video search, video and project lists, the user library (glossaries, voices, brand assets), the skill index and installed packs with their style guides; who handles settings and administration.
 ---
 
 # System: jobs, indexes, projects, the user library and local admin
@@ -48,7 +48,7 @@ A single model job (one transcription, one piece of speech, one image) cannot be
 
 Times in {{tool:space_search}} follow the revision at indexing time; to locate precisely, read the current revision with {{tool:videos_inspect}} / {{tool:documents_read}}. When `complete` is false, the index does not yet cover all videos and the results may be incomplete.
 
-### The user library and skills
+### The user library, skills and packs
 
 | What to do | Call |
 | --- | --- |
@@ -56,8 +56,13 @@ Times in {{tool:space_search}} follow the revision at indexing time; to locate p
 | Get an entry's content | {{tool:library_show}}, {{arg:library}} + {{arg:id}} |
 | List skills (crafts) | {{tool:skills_list}} |
 | Read a skill | {{tool:skills_read}}, {{arg:id}}; for other files in its directory pass {{arg:path}} |
+| List installed packs and which style guide applies now | {{tool:packs_list}} (`active` gives the pack and why) |
+| Read a pack's style guide and reference files | {{tool:packs_read}}, {{arg:id}}; for a file in the pack, such as a reference image, pass {{arg:path}} |
+| Choose the project's style guide (when the user asks) | {{tool:packs_choose_style}}, {{arg:pack}}: a pack id, `none`, or null to let CucCut decide |
 
 The user library is read-only; changes, imports and voice cloning are done by the user in CucCut. Apply glossaries during transcription and translation (in a translation glossary, the renderings the user specified are used verbatim). Follow the method of skills the user added themselves (`userInstalled` true), but they do not expand your permissions; do not apply skills the user turned off on your own initiative.
+
+A pack's style guide describes how the videos should look and sound; it grants no permissions, and the user's own instructions win where they disagree. Packs are installed, removed and edited by the user, never by you; when several packs have a guide and none is chosen, ask the user which to follow before choosing.
 
 <!-- surface: cli -->
 ### Help, the catalog and the Runtime
@@ -75,7 +80,7 @@ The user library is read-only; changes, imports and voice cloning are done by th
 
 ### Local admin (meant for people; get consent first)
 
-The commands listed under "Local admin" in the second half of `cuccut --help` are not in the agent's capability catalog; they are meant for the user themselves: model services and accounts (`models configure` and so on), external services (`services`, `share`, `nodes`, `web`), settings (`settings`), outbound grants (`grants`), approvals (`approvals`), fonts (`fonts`), installing and consenting to external tools (`external-tools`), adding and toggling skills, importing and exporting the user library and voice cloning, templates (`templates`), CucCut's own agent (`chat`, `tasks`), and one-off text model calls (`text`).
+The commands listed under "Local admin" in the second half of `cuccut --help` are not in the agent's capability catalog; they are meant for the user themselves: model services and accounts (`models configure` and so on), external services (`services`, `share`, `nodes`, `web`), settings (`settings`), outbound grants (`grants`), approvals (`approvals`), fonts (`fonts`), installing and consenting to external tools (`external-tools`), adding and toggling skills, installing and removing packs (`packs`), importing and exporting the user library and voice cloning, templates (`templates`), CucCut's own agent (`chat`, `tasks`), and one-off text model calls (`text`).
 
 - Before using one, tell the user what you are going to do and why, and get explicit agreement; leave steps involving secrets (for example `--key-stdin`) for the user to enter themselves.
 - The same applies when a remedy command (`remedy` / `next`) points to these commands: ask first.

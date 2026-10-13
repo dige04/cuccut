@@ -54,6 +54,8 @@ export const zhHant: ServicesMcpMessages = {
     projects_list: '列出專案',
     skills_list: '列出 Skill',
     skills_read: '讀取 Skill',
+    packs_list: 'List packs',
+    packs_read: 'Read a pack',
     library_list: '列出資料庫',
     library_show: '查看資料庫項目',
     download: '從連結下載',

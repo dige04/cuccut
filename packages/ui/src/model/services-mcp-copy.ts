@@ -69,6 +69,8 @@ const en = {
     projects_list: 'List projects',
     skills_list: 'List skills',
     skills_read: 'Read skill',
+    packs_list: 'List packs',
+    packs_read: 'Read a pack',
     library_list: 'List library',
     library_show: 'View library item',
     download: 'Download from link',

@@ -54,6 +54,8 @@ export const pl: ServicesMcpMessages = {
     projects_list: "Lista projektów",
     skills_list: "Wyświetl Skills",
     skills_read: "Odczytaj Skill",
+    packs_list: 'List packs',
+    packs_read: 'Read a pack',
     library_list: "Wyświetl bibliotekę",
     library_show: "Zobacz element biblioteki",
     download: "Pobierz z linku",

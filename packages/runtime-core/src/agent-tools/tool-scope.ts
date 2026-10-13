@@ -185,6 +185,11 @@ export const TOOL_RISK: Readonly<Record<string, RiskLevel>> = {
   // Moving a project-less session into a new project (§3.10): only creates a new directory under CucCut's projects directory and moves the session's own working directory, without overwriting files.
   projects_adopt_session: 'edit',
   skills_list: 'read',
+  // Packs (pack spec §7): listing and reading installed packs are read-only (reading an image copies it into the session's own .ccut/style/); choosing a project's style
+  // guide changes one entry in the choice store and what later sessions read, so it is an edit.
+  packs_list: 'read',
+  packs_read: 'read',
+  packs_choose_style: 'edit',
   // User library (§5.9): read-only.
   library_list: 'read',
   library_show: 'read',

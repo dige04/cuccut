@@ -120,6 +120,7 @@ import { skillIndexBlock } from './skills/skill-brief.ts';
 import { aiToolDefinition } from './ai-tools/ai-tool-wiring.ts';
 import { resolveBuiltinAgentSkillsDir } from './skills/agent-skill-renderer.ts';
 import { SkillTools } from './agent-tools/skill-tools.ts';
+import { PackTools } from './agent-tools/pack-tools.ts';
 import { JobTools } from './agent-tools/job-tools.ts';
 import { ProjectTools } from './agent-tools/project-tools.ts';
 import { LibraryTools } from './agent-tools/library-tools.ts';
@@ -792,6 +793,8 @@ export async function startRuntime(options: StartRuntimeOptions = {}): Promise<R
         // The Space directory is built later, so it is fetched at tool call time.
         new SpaceTools({ space: () => space, scope: toolScope, jobs: models.jobs }),
         new SkillTools({ skills, scope: toolScope }),
+        // Packs (pack spec §7): reading installed packs and a project's style choice; installing stays with the person.
+        new PackTools({ registry: packRegistry, style: packStyle, harness, scope: toolScope }),
         new GrantTools({ models, scope: toolScope }),
         new TaskTools({ harness, scope: toolScope }),
         new LinkImportTools(linkImport),

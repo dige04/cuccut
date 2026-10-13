@@ -36,7 +36,7 @@ describe('设置分组', () => {
   it('publishing 是应用组里的第一个分节', () => {
     expect(isSettingsSection('publishing')).toBe(true);
     expect(SETTINGS_GROUPS.find((g) => g.id === 'app')?.keys[0]).toBe('publishing');
-    expect(SETTINGS_SECTION_INFO.find((s) => s.key === 'publishing')?.label).toBe('Publishing');
+    expect(SETTINGS_SECTION_INFO.find((s) => s.key === 'publishing')?.label).toBe('发布');
   });
 });
 

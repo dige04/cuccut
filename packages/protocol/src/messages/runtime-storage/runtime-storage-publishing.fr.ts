@@ -1,12 +1,11 @@
 import type { RuntimeStoragePublishingMessages } from './runtime-storage-publishing.ts';
 
 export const fr: RuntimeStoragePublishingMessages = {
-  unreadable:
-    "Publishing data couldn't be read. CucCut left the file as it is and won't change it. Restore it from a backup, or move it aside to start over.",
-  newerVersion: 'Publishing data was saved by a newer version of CucCut. Update CucCut to change it; until then you can only view it.',
-  conflict: 'This publication changed elsewhere. Reload the saved version before applying your changes.',
-  settingsConflict: 'Publishing settings changed elsewhere. Reload them before saving.',
-  notFound: 'This publication no longer exists.',
-  invalidRecord: "This change would leave a publishing record incomplete, so it wasn't saved. Check the values and try again.",
-  writeFailed: "Publishing data couldn't be saved to disk. Check that the disk has space and CucCut can write to its folder, then try again.",
+  unreadable: "Les données de publication n'ont pas pu être lues. CucCut a laissé le fichier tel quel et ne le modifiera pas. Restaurez-le depuis une sauvegarde, ou déplacez-le pour repartir de zéro.",
+  newerVersion: "Les données de publication ont été enregistrées par une version plus récente de CucCut. Mettez CucCut à jour pour les modifier ; d'ici là, vous ne pouvez que les consulter.",
+  conflict: "Cette publication a été modifiée ailleurs. Rechargez la version enregistrée avant d'appliquer vos modifications.",
+  settingsConflict: "Les paramètres de publication ont été modifiés ailleurs. Rechargez-les avant d'enregistrer.",
+  notFound: "Cette publication n'existe plus.",
+  invalidRecord: "Cette modification laisserait un enregistrement de publication incomplet, elle n'a donc pas été enregistrée. Vérifiez les valeurs et réessayez.",
+  writeFailed: "Les données de publication n'ont pas pu être enregistrées sur le disque. Vérifiez que le disque a de l'espace libre et que CucCut peut écrire dans son dossier, puis réessayez.",
 };

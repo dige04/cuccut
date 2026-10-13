@@ -21,7 +21,7 @@ export const de: SettingsNavMessages = {
     fonts: "Schriften",
     agent: "Agentenanbieter",
     skills: "Skills",
-    publishing: 'Publishing', glossary: "Glossar",
+    publishing: 'Veröffentlichung', glossary: "Glossar",
     privacy: "Datenschutz und Berechtigungen",
     diagnostics: "Diagnose",
     about: "Über",

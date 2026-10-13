@@ -1,12 +1,11 @@
 import type { RuntimeStoragePublishingMessages } from './runtime-storage-publishing.ts';
 
 export const de: RuntimeStoragePublishingMessages = {
-  unreadable:
-    "Publishing data couldn't be read. CucCut left the file as it is and won't change it. Restore it from a backup, or move it aside to start over.",
-  newerVersion: 'Publishing data was saved by a newer version of CucCut. Update CucCut to change it; until then you can only view it.',
-  conflict: 'This publication changed elsewhere. Reload the saved version before applying your changes.',
-  settingsConflict: 'Publishing settings changed elsewhere. Reload them before saving.',
-  notFound: 'This publication no longer exists.',
-  invalidRecord: "This change would leave a publishing record incomplete, so it wasn't saved. Check the values and try again.",
-  writeFailed: "Publishing data couldn't be saved to disk. Check that the disk has space and CucCut can write to its folder, then try again.",
+  unreadable: "Die Veröffentlichungsdaten konnten nicht gelesen werden. CucCut hat die Datei unverändert gelassen und ändert sie nicht. Stelle sie aus einer Sicherung wieder her oder verschiebe sie, um neu zu beginnen.",
+  newerVersion: "Die Veröffentlichungsdaten wurden von einer neueren Version von CucCut gespeichert. Aktualisiere CucCut, um sie zu ändern; bis dahin kannst du sie nur ansehen.",
+  conflict: "Diese Veröffentlichung wurde an anderer Stelle geändert. Lade die gespeicherte Version neu, bevor du deine Änderungen übernimmst.",
+  settingsConflict: "Die Veröffentlichungseinstellungen wurden an anderer Stelle geändert. Lade sie vor dem Speichern neu.",
+  notFound: "Diese Veröffentlichung existiert nicht mehr.",
+  invalidRecord: "Diese Änderung würde einen Veröffentlichungseintrag unvollständig machen, deshalb wurde sie nicht gespeichert. Prüfe die Werte und versuche es erneut.",
+  writeFailed: "Die Veröffentlichungsdaten konnten nicht auf der Festplatte gespeichert werden. Prüfe, ob genügend Speicherplatz frei ist und CucCut in seinen Ordner schreiben kann, und versuche es dann erneut.",
 };

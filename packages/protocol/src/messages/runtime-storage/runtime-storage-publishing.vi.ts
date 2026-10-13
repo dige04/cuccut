@@ -1,12 +1,11 @@
 import type { RuntimeStoragePublishingMessages } from './runtime-storage-publishing.ts';
 
 export const vi: RuntimeStoragePublishingMessages = {
-  unreadable:
-    "Publishing data couldn't be read. CucCut left the file as it is and won't change it. Restore it from a backup, or move it aside to start over.",
-  newerVersion: 'Publishing data was saved by a newer version of CucCut. Update CucCut to change it; until then you can only view it.',
-  conflict: 'This publication changed elsewhere. Reload the saved version before applying your changes.',
-  settingsConflict: 'Publishing settings changed elsewhere. Reload them before saving.',
-  notFound: 'This publication no longer exists.',
-  invalidRecord: "This change would leave a publishing record incomplete, so it wasn't saved. Check the values and try again.",
-  writeFailed: "Publishing data couldn't be saved to disk. Check that the disk has space and CucCut can write to its folder, then try again.",
+  unreadable: "Không đọc được dữ liệu phát hành. CucCut giữ nguyên tệp và sẽ không thay đổi nó. Hãy khôi phục từ bản sao lưu, hoặc chuyển tệp sang chỗ khác để bắt đầu lại.",
+  newerVersion: "Dữ liệu phát hành được lưu bởi phiên bản CucCut mới hơn. Hãy cập nhật CucCut để thay đổi; cho đến lúc đó bạn chỉ có thể xem.",
+  conflict: "Bài phát hành này đã bị thay đổi ở nơi khác. Hãy tải lại phiên bản đã lưu trước khi áp dụng thay đổi của bạn.",
+  settingsConflict: "Cài đặt phát hành đã bị thay đổi ở nơi khác. Hãy tải lại trước khi lưu.",
+  notFound: "Bài phát hành này không còn tồn tại.",
+  invalidRecord: "Thay đổi này sẽ khiến một bản ghi phát hành không đầy đủ nên chưa được lưu. Hãy kiểm tra các giá trị và thử lại.",
+  writeFailed: "Không thể lưu dữ liệu phát hành xuống đĩa. Hãy kiểm tra đĩa còn dung lượng và CucCut có quyền ghi vào thư mục của nó, rồi thử lại.",
 };

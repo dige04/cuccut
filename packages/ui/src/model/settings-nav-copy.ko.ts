@@ -21,7 +21,7 @@ export const ko: SettingsNavMessages = {
     fonts: '글꼴',
     agent: 'Agent 공급자',
     skills: 'Skills',
-    publishing: 'Publishing', glossary: '용어집',
+    publishing: '게시', glossary: '용어집',
     privacy: '개인 정보 보호 및 권한',
     diagnostics: '진단',
     about: '정보',

@@ -21,7 +21,7 @@ export const ja: SettingsNavMessages = {
     fonts: 'フォント',
     agent: 'Agent プロバイダ',
     skills: 'Skills',
-    publishing: 'Publishing', glossary: '用語集',
+    publishing: '公開', glossary: '用語集',
     privacy: 'プライバシーと権限',
     diagnostics: '診断',
     about: '情報',

@@ -1,12 +1,11 @@
 import type { RuntimeStoragePublishingMessages } from './runtime-storage-publishing.ts';
 
 export const nl: RuntimeStoragePublishingMessages = {
-  unreadable:
-    "Publishing data couldn't be read. CucCut left the file as it is and won't change it. Restore it from a backup, or move it aside to start over.",
-  newerVersion: 'Publishing data was saved by a newer version of CucCut. Update CucCut to change it; until then you can only view it.',
-  conflict: 'This publication changed elsewhere. Reload the saved version before applying your changes.',
-  settingsConflict: 'Publishing settings changed elsewhere. Reload them before saving.',
-  notFound: 'This publication no longer exists.',
-  invalidRecord: "This change would leave a publishing record incomplete, so it wasn't saved. Check the values and try again.",
-  writeFailed: "Publishing data couldn't be saved to disk. Check that the disk has space and CucCut can write to its folder, then try again.",
+  unreadable: "Publicatiegegevens konden niet worden gelezen. CucCut heeft het bestand laten staan zoals het is en past het niet aan. Herstel het uit een back-up, of verplaats het om opnieuw te beginnen.",
+  newerVersion: "Publicatiegegevens zijn opgeslagen door een nieuwere versie van CucCut. Werk CucCut bij om ze te wijzigen; tot die tijd kun je ze alleen bekijken.",
+  conflict: "Deze publicatie is elders gewijzigd. Laad de opgeslagen versie opnieuw voordat je je wijzigingen toepast.",
+  settingsConflict: "Publicatie-instellingen zijn elders gewijzigd. Laad ze opnieuw voordat je opslaat.",
+  notFound: "Deze publicatie bestaat niet meer.",
+  invalidRecord: "Deze wijziging zou een publicatierecord onvolledig maken, dus is niet opgeslagen. Controleer de waarden en probeer het opnieuw.",
+  writeFailed: "Publicatiegegevens konden niet naar de schijf worden opgeslagen. Controleer of de schijf ruimte heeft en CucCut in de map kan schrijven, en probeer het daarna opnieuw.",
 };

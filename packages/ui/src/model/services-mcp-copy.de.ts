@@ -57,7 +57,7 @@ export const de: ServicesMcpMessages = {
     skills_read: "Skill lesen",
     library_list: "Bibliothek auflisten",
     library_show: "Bibliothekseintrag anzeigen",
-    download: "Über Link herunterladen", publications_list: 'List publications', publications_inspect: 'View publication', publications_prepare: 'Prepare publications', publications_update: 'Edit publication', publications_reschedule: 'Move publication', publications_slots: 'Plan publishing times', publications_reserve: 'Reserve publishing times', publications_propose_copy: 'Suggest publication text',
+    download: "Über Link herunterladen", publications_list: 'Veröffentlichungen auflisten', publications_inspect: 'Veröffentlichung anzeigen', publications_prepare: 'Veröffentlichungen vorbereiten', publications_update: 'Veröffentlichung bearbeiten', publications_reschedule: 'Veröffentlichung verschieben', publications_slots: 'Veröffentlichungszeiten planen', publications_reserve: 'Veröffentlichungszeiten reservieren', publications_propose_copy: 'Veröffentlichungstext vorschlagen',
   },
   gates: {
     answer: "Antwortet direkt",

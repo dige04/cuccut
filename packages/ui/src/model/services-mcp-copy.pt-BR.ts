@@ -57,7 +57,7 @@ export const ptBR: ServicesMcpMessages = {
     skills_read: "Ler Skill",
     library_list: "Listar biblioteca",
     library_show: "Ver item de biblioteca",
-    download: "Baixar de link", publications_list: 'List publications', publications_inspect: 'View publication', publications_prepare: 'Prepare publications', publications_update: 'Edit publication', publications_reschedule: 'Move publication', publications_slots: 'Plan publishing times', publications_reserve: 'Reserve publishing times', publications_propose_copy: 'Suggest publication text',
+    download: "Baixar de link", publications_list: 'Listar publicações', publications_inspect: 'Ver publicação', publications_prepare: 'Preparar publicações', publications_update: 'Editar publicação', publications_reschedule: 'Mover publicação', publications_slots: 'Planejar horários de publicação', publications_reserve: 'Reservar horários de publicação', publications_propose_copy: 'Sugerir texto de publicação',
   },
   gates: {
     answer: "Respondido diretamente",

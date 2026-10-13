@@ -85,7 +85,7 @@ const handoffBar = style({
   marginBottom: 16,
   paddingX: 12,
   paddingY: 8,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   backgroundColor: 'informative-subtle',
   font: 'ui-sm',
   color: 'gray-900',

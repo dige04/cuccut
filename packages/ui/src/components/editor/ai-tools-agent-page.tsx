@@ -288,7 +288,7 @@ export function AiAgentToolPage({
     return (
       <>
         <PanelHead title={info.name} back={{ label: C.back, onPress: onBack }} />
-        <div className={`${body} bc-scroll`}>
+        <div className={`${body} cc-scroll`}>
           <StaleRefreshView live={refreshLive} />
         </div>
       </>
@@ -301,7 +301,7 @@ export function AiAgentToolPage({
     return (
       <>
         <PanelHead title={info.name} back={{ label: C.back, onPress: run ? onBack : () => closeAiToolResult(key) }} />
-        <div className={`${body} bc-scroll`}>
+        <div className={`${body} cc-scroll`}>
           {run ? (
             <DirectRunView run={run} />
           ) : result ? (
@@ -317,7 +317,7 @@ export function AiAgentToolPage({
   return (
     <>
       <PanelHead title={info.name} back={{ label: C.back, onPress: onBack }} />
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         {problem ? (
           <div className={problemBox}>
             <DirectProblem runKey={key} problem={problem} />

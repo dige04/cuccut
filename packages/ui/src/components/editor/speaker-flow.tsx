@@ -337,7 +337,7 @@ function SetupView({
 
   return (
     <>
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <div className={stack}>
           {problem ? <ProblemAlert videoId={videoId} problem={problem} /> : null}
           <div className={card}>
@@ -475,7 +475,7 @@ function RunView({ run }: { run: SpeakersRun }) {
   const current = submitting ? 0 : speakersStage(job, jobs);
   const heading = submitting ? C.submitting : queued ? C.queued : C.running;
   return (
-    <div className={`${body} bc-scroll`}>
+    <div className={`${body} cc-scroll`}>
       <div className={stack}>
         <div className={head} role="status" aria-live="polite">
           <div className={titleRow}>
@@ -570,7 +570,7 @@ function ConfirmView({
   const invalid = summary.speakers.some((s) => names[s.id] !== undefined && nameProblem(names[s.id]!) !== null);
   return (
     <>
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <div className={stack}>
           <p className={signpost}>{C.found(summary.speakers.length)}</p>
           {summary.relabeled === 0 ? <p className={hint}>{C.same}</p> : null}
@@ -687,7 +687,7 @@ function SpeakerCard({
                 isDisabled={!at}
                 aria-label={at ? clip.text : E.withNote(clip.text, C.clipOff)}
                 onChange={() => at && player.toggle(key, at)}>
-                <span className="bc-tabular">{clipLabel(clip, timescale)}</span>
+                <span className="cc-tabular">{clipLabel(clip, timescale)}</span>
               </ToggleButton>
             );
           })}
@@ -717,7 +717,7 @@ function DoneView({
   // 「完成」回到设置页，不回列表。
   const finish = () => closeSpeakers(videoId);
   return (
-    <div className={`${body} bc-scroll`}>
+    <div className={`${body} cc-scroll`}>
       <div className={stack}>
         <InlineAlert variant={receipt.undone ? 'neutral' : 'positive'}>
           <Heading>{receipt.undone ? C.undoneReceipt : speakersReceiptText(summary, C.engine)}</Heading>

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { DialogContainer, ToastQueue } from '@react-spectrum/s2';
+import { ToastQueue } from '@react-spectrum/s2';
 import type { AppUpdateNotice } from '../../host.ts';
 import { availableToast, dialog, NOTES_LANG, readyToast, sideButton } from '../../model/app-update.ts';
 import { useRuntime } from '../../runtime/context.tsx';
@@ -96,7 +96,7 @@ export function AppUpdateHost() {
   if (!updates) return null;
   return (
     <>
-      <DialogContainer onDismiss={closeWindow}>{windowOpen && view ? <UpdateWindow view={view} onClose={closeWindow} /> : null}</DialogContainer>
+      <UpdateWindow open={windowOpen} view={view} onClose={closeWindow} />
       <InstallBarrier />
     </>
   );

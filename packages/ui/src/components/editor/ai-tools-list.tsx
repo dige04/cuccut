@@ -336,7 +336,7 @@ export function AiToolsList({ videoId, sequence, documents }: { videoId: Id; seq
   return (
     <>
       <PanelHead title={EL.tabAiTools} />
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <AgentCard guide={guide} />
         {hasTranscript ? null : (
           <div className={emptyCard}>

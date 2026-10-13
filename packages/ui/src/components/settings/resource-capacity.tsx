@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ResourcesSnapshot } from '@cuccut/protocol';
 import { Button, NumberField, ToastQueue } from '@react-spectrum/s2';
+import { Gauge, ListChecks } from 'lucide-react';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import {
   CAPACITY_LIMITS,
@@ -20,6 +21,7 @@ import { useJobs } from '../../state/jobs-store.ts';
 import { useSetting } from '../../state/settings-store.ts';
 import { M } from './general-settings-copy.ts';
 import { RESOURCE_COPY } from './resource-capacity-copy.ts';
+import { Panel, PanelHeading, RowList, SettingsRow } from './settings-ui.tsx';
 
 /*
  * 设置 → 诊断 →「资源调度」（架构设计 §7.6、§7.7；设计稿没有这一块）：机器的容量与来源、谁在用、谁在等；
@@ -28,28 +30,6 @@ import { RESOURCE_COPY } from './resource-capacity-copy.ts';
  * 浏览器里只读：Web 白名单不含 `settings.set`，上限框与「全部恢复自动」置灰，导语下写一句。
  */
 
-const group = style({ marginBottom: 48 });
-const groupHead = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 });
-const groupTitle = style({ margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const lead = style({ marginTop: -8, marginBottom: 16, font: 'ui-sm', color: 'gray-600' });
-const webNote = style({ marginTop: -8, marginBottom: 16, font: 'ui-sm', color: 'gray-800' });
-const card = style({ paddingX: 16, borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', borderRadius: 'xl' });
-const subhead = style({ marginTop: 24, marginBottom: 12, font: 'ui-sm', fontWeight: 'medium', color: 'gray-700' });
-const row = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-  paddingY: 16,
-  borderTopWidth: 0,
-  borderXWidth: 0,
-  borderBottomWidth: { default: 1, ':last-child': 0 },
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-const rowText = style({ flexGrow: 1, minWidth: 0 });
-const rowLabel = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const rowDesc = style({ marginTop: 4, font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere', userSelect: 'text' });
-const rowControl = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 });
 const rowValue = style({ font: 'ui', color: 'gray-800', userSelect: 'text' });
 const field = style({ width: 144 });
 
@@ -106,60 +86,65 @@ export function ResourceCapacity() {
   };
 
   return (
-    <section className={group} aria-label={RESOURCE_COPY.title}>
-      <div className={groupHead}>
-        <h2 className={groupTitle}>{RESOURCE_COPY.title}</h2>
-        {overridden ? (
-          <Button variant="secondary" size="S" isDisabled={web || !connected} onPress={() => void save({ memoryGB: null, gpuMemoryGB: null, cpuThreads: null })}>
-            {RESOURCE_COPY.resetAll}
-          </Button>
-        ) : null}
-      </div>
-      <p className={lead}>{RESOURCE_COPY.lead}</p>
-      {web ? <p className={webNote}>{M.webNote}</p> : null}
-      <div className={card}>
-        {!connected ? (
-          <Row label={RESOURCE_COPY.disconnected} />
-        ) : !snapshot ? (
-          <Row label={failed ? RESOURCE_COPY.loadFailed : RESOURCE_COPY.loading} desc={failed ?? undefined} />
-        ) : (
-          capacityRows(snapshot).map((r) => {
-            const key = r.dimension === 'scratchDisk' ? null : FIELD_OF[r.dimension];
-            return (
-              <Row key={r.dimension} label={`${r.label} · ${r.total}`} desc={r.desc}>
-                {key ? (
-                  <NumberField
-                    aria-label={RESOURCE_COPY.limitOf(r.label, RESOURCE_COPY.unit[key])}
-                    size="S"
-                    styles={field}
-                    placeholder={autoPlaceholder(snapshot, key)}
-                    minValue={CAPACITY_LIMITS[key].min}
-                    maxValue={CAPACITY_LIMITS[key].max}
-                    step={key === 'cpuThreads' ? 1 : 0.5}
-                    formatOptions={key === 'cpuThreads' ? { maximumFractionDigits: 0 } : { maximumFractionDigits: 1 }}
-                    value={form[key] ?? NaN}
-                    isDisabled={web}
-                    onChange={(value) => void save({ ...form, [key]: Number.isNaN(value) ? null : value })}
-                  />
-                ) : (
-                  <span className={rowValue}>{RESOURCE_COPY.notSettable}</span>
-                )}
-              </Row>
-            );
-          })
-        )}
-      </div>
+    <>
+      <Panel label={RESOURCE_COPY.title} className="flex flex-col gap-2 pb-1.5">
+        <PanelHeading
+          title={RESOURCE_COPY.title}
+          hint={RESOURCE_COPY.lead}
+          icon={<Gauge />}
+          action={
+            overridden ? (
+              <Button variant="secondary" size="S" isDisabled={web || !connected} onPress={() => void save({ memoryGB: null, gpuMemoryGB: null, cpuThreads: null })}>
+                {RESOURCE_COPY.resetAll}
+              </Button>
+            ) : null
+          }
+        />
+        {web ? <p className="m-0 text-xs text-foreground/80">{M.webNote}</p> : null}
+        <RowList>
+          {!connected ? (
+            <SettingsRow label={RESOURCE_COPY.disconnected} />
+          ) : !snapshot ? (
+            <SettingsRow label={failed ? RESOURCE_COPY.loadFailed : RESOURCE_COPY.loading} desc={failed ?? undefined} />
+          ) : (
+            capacityRows(snapshot).map((r) => {
+              const key = r.dimension === 'scratchDisk' ? null : FIELD_OF[r.dimension];
+              return (
+                <SettingsRow key={r.dimension} label={`${r.label} · ${r.total}`} desc={r.desc}>
+                  {key ? (
+                    <NumberField
+                      aria-label={RESOURCE_COPY.limitOf(r.label, RESOURCE_COPY.unit[key])}
+                      size="S"
+                      styles={field}
+                      placeholder={autoPlaceholder(snapshot, key)}
+                      minValue={CAPACITY_LIMITS[key].min}
+                      maxValue={CAPACITY_LIMITS[key].max}
+                      step={key === 'cpuThreads' ? 1 : 0.5}
+                      formatOptions={key === 'cpuThreads' ? { maximumFractionDigits: 0 } : { maximumFractionDigits: 1 }}
+                      value={form[key] ?? NaN}
+                      isDisabled={web}
+                      onChange={(value) => void save({ ...form, [key]: Number.isNaN(value) ? null : value })}
+                    />
+                  ) : (
+                    <span className={rowValue}>{RESOURCE_COPY.notSettable}</span>
+                  )}
+                </SettingsRow>
+              );
+            })
+          )}
+        </RowList>
+      </Panel>
       {snapshot ? (
-        <>
-          <div className={subhead}>{RESOURCE_COPY.inUseAndQueued}</div>
-          <div className={card}>
+        <Panel label={RESOURCE_COPY.inUseAndQueued} className="flex flex-col gap-2 pb-1.5">
+          <PanelHeading title={RESOURCE_COPY.inUseAndQueued} icon={<ListChecks />} />
+          <RowList>
             {snapshot.leases.length || snapshot.waiting.length ? (
               <>
                 {snapshot.leases.map((l) => (
-                  <Row key={l.leaseId} label={titleOf(l.owner, l.label)} desc={RESOURCE_COPY.inUse(demandLine(l.demand))} />
+                  <SettingsRow key={l.leaseId} label={titleOf(l.owner, l.label)} desc={RESOURCE_COPY.inUse(demandLine(l.demand))} />
                 ))}
                 {snapshot.waiting.map((w) => (
-                  <Row
+                  <SettingsRow
                     key={`wait:${w.owner}`}
                     label={titleOf(w.owner, w.label)}
                     desc={RESOURCE_COPY.queued(jobWaitText(w.wait), demandLine(w.demand))}
@@ -167,23 +152,11 @@ export function ResourceCapacity() {
                 ))}
               </>
             ) : (
-              <Row label={RESOURCE_COPY.idle} />
+              <SettingsRow label={RESOURCE_COPY.idle} />
             )}
-          </div>
-        </>
+          </RowList>
+        </Panel>
       ) : null}
-    </section>
-  );
-}
-
-function Row({ label, desc, children }: { label: string; desc?: string; children?: ReactNode }) {
-  return (
-    <div className={row}>
-      <div className={rowText}>
-        <div className={rowLabel}>{label}</div>
-        {desc ? <div className={rowDesc}>{desc}</div> : null}
-      </div>
-      {children ? <div className={rowControl}>{children}</div> : null}
-    </div>
+    </>
   );
 }

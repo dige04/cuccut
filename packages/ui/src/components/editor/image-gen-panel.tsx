@@ -213,7 +213,7 @@ export function ImageGenPane({ videoId, sequence, assets }: { videoId: Id; seque
   const chars = codePoints(draft.prompt.trim());
 
   return (
-    <div ref={scrollRef} className={`${body} bc-scroll`} onKeyDown={submitOnModEnter(generate)}>
+    <div ref={scrollRef} className={`${body} cc-scroll`} onKeyDown={submitOnModEnter(generate)}>
       {view && !options.some((o) => o.usable) ? (
         <div className={gateWrap}>
           <Gate

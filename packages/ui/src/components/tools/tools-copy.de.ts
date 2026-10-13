@@ -6,9 +6,9 @@ import type { ToolsMessages } from './tools-copy.ts';
 export const de: ToolsMessages = {
   gallery: {
     title: "Werkzeuge",
-    lede: "Datei oder Text direkt durch ein Modell verarbeiten; Ergebnisse werden in Space gespeichert. Keine Agentenverbindung nötig.",
+    lede: "Datei oder Text direkt durch ein Modell verarbeiten; Ergebnisse werden in der Bibliothek gespeichert. Keine Agentenverbindung nötig.",
 
-    ledeNote: "Ergebnisse erscheinen automatisch in Space (auf diesem Computer gespeichert); Kopie auch herunterladbar.",
+    ledeNote: "Ergebnisse erscheinen automatisch in der Bibliothek (auf diesem Computer gespeichert); Kopie auch herunterladbar.",
     planned: "Demnächst verfügbar",
     foot: "Weitere Werkzeuge folgen: Formatkonvertierung, Audioextraktion, Zuschneiden, Stapeluntertitel und mehr.",
     loading: "Modellstatus wird geladen…",
@@ -28,7 +28,7 @@ export const de: ToolsMessages = {
 
 
   save: {
-    view: "In Space anzeigen",
+    view: "In der Bibliothek anzeigen",
   },
 
 
@@ -37,7 +37,7 @@ export const de: ToolsMessages = {
     savedIn: (dir: string) => `Gespeichert in ${dir}`,
     movie: "Ins Video geschrieben",
     open: "Im Editor öffnen",
-    inSpace: "In Space anzeigen",
+    inSpace: "In der Bibliothek anzeigen",
     get reveal() {
       return revealLabel();
     },
@@ -143,7 +143,7 @@ export const de: ToolsMessages = {
     empty: "Noch nichts erzeugt",
     emptyBody: "Text schreiben, Stimme auswählen und „Sprache erzeugen“ anklicken.",
     sideFoot:
-      "Erzeugtes Audio liegt am Speicherort und unter „Audio“ in Space; „Herunterladen“ speichert eine Kopie am gewählten Ort. Cloud-Synthese verwendet die Anbieter-API und wird nach deren Regeln abgerechnet.",
+      "Erzeugtes Audio liegt am Speicherort und unter „Audio“ in der Bibliothek; „Herunterladen“ speichert eine Kopie am gewählten Ort. Cloud-Synthese verwendet die Anbieter-API und wird nach deren Regeln abgerechnet.",
     reused: (name: string) => `Text und Einstellungen wiederhergestellt von ${name}`,
     submitted: "Erzeugung gestartet",
     submitFailed: (message: string) => `Nicht gestartet: ${message}`,
@@ -164,7 +164,7 @@ export const de: ToolsMessages = {
     change: "Ändern…",
     pickTitle: "Speicherort für diese Ausführung wählen",
     pickFailed: (message: string) => `Ordner konnte nicht ausgewählt werden: ${message}`,
-    saveNote: "Ergebnisse erscheinen als Space-Einträge; Dateien liegen in diesem Ordner. Gleiche Namen erhalten Nummern, vorhandene Dateien werden nie überschrieben.",
+    saveNote: "Ergebnisse erscheinen als Bibliothekseinträge; Dateien liegen in diesem Ordner. Gleiche Namen erhalten Nummern, vorhandene Dateien werden nie überschrieben.",
 
     saveFoot: (note: string, once: boolean) =>
       `${note} ${once ? "Gilt nur für diese Ausführung; ändern Sie" : "Ändern"} den Standard unter Einstellungen › Allgemein.`,
@@ -236,7 +236,7 @@ export const de: ToolsMessages = {
     empty: "Noch nichts erzeugt",
     emptyBody: "Bild beschreiben, Modell wählen und „Bild erzeugen“ anklicken.",
     sideFoot:
-      "Erzeugte Bilder liegen am Speicherort und unter „Bilder“ in Space; „Herunterladen“ speichert Kopien am gewählten Ort. Cloud-Anbieter können eigene Kopien erzeugter Bilder behalten.",
+      "Erzeugte Bilder liegen am Speicherort und unter „Bilder“ in der Bibliothek; „Herunterladen“ speichert Kopien am gewählten Ort. Cloud-Anbieter können eigene Kopien erzeugter Bilder behalten.",
     again: "Weitere Variante",
     againDone: "Prompt und Einstellungen dieser Variante wiederhergestellt; Seed leer für neue zufällige Wahl",
     failed: (message: string) => `Nichts erzeugt · ${message}`,
@@ -259,12 +259,12 @@ export const de: ToolsMessages = {
   text: {
     title: "Texterzeugung",
     submit: "Text erzeugen",
-    lede: "Inhalt und Anweisungen direkt an ein Textmodell senden; erzeugte Dokumente automatisch in Space gespeichert.",
+    lede: "Inhalt und Anweisungen direkt an ein Textmodell senden; erzeugte Dokumente automatisch in der Bibliothek gespeichert.",
     inputLabel: "Anweisungen",
     material: "Angehängtes Material",
-    materialAdd: "Aus Space anhängen…",
+    materialAdd: "Aus der Bibliothek anhängen…",
     materialRemove: "Entfernen",
-    materialNote: "Dokumente oder Untertitel aus Space anhängen; ihr Text wird nach Ihren Anweisungen an das Modell gesendet.",
+    materialNote: "Dokumente oder Untertitel aus der Bibliothek anhängen; ihr Text wird nach Ihren Anweisungen an das Modell gesendet.",
     materialPicked: (name: string) => `Text wird angehängt aus „${name}“`,
     inputPlaceholder: "Erzeugungswunsch beschreiben oder Quelltext mit Umschreibungs-/Zusammenfassungsanweisung einfügen",
     sample: "Beispiel einfügen",
@@ -275,11 +275,11 @@ export const de: ToolsMessages = {
     noModel: "Noch kein Textmodell verfügbar",
     noModelBody: "Unter Einstellungen › Modelle › Texterzeugung › Cloud-Modelle Anbieter verbinden (Schlüssel eingeben); dann hier Modelle wählen.",
     side: "Verlauf",
-    viewInSpace: "In Space anzeigen",
+    viewInSpace: "In der Bibliothek anzeigen",
     empty: "Noch keine Ergebnisse",
-    emptyBody: "Nach Abschluss automatisch in Space gespeichert.",
+    emptyBody: "Nach Abschluss automatisch in der Bibliothek gespeichert.",
     sideFoot:
-      "Volltext auf diesem Computer und unter „Dokumente“ in Space gespeichert (Name „Erzeugter Text-Datum-Zeit“). „Herunterladen“ speichert eine Kopie am gewählten Ort. Cloud-Aufrufe laufen über Anbieter-API und rechnen pro Token ab.",
+      "Volltext auf diesem Computer und unter „Dokumente“ in der Bibliothek gespeichert (Name „Erzeugter Text-Datum-Zeit“). „Herunterladen“ speichert eine Kopie am gewählten Ort. Cloud-Aufrufe laufen über Anbieter-API und rechnen pro Token ab.",
     waiting: "Warten auf das Modell…",
     copy: "Kopieren",
     download: "Herunterladen",
@@ -361,10 +361,10 @@ export const de: ToolsMessages = {
     pathLabel: "Oder vollständigen Dateipfad einfügen",
     pathPlaceholder: "/Users/…/clip.mp4",
     pathAdd: "Hinzufügen",
-    spaceAdd: "Aus Space hinzufügen…",
-    spaceDone: "Space ausblenden",
-    spaceItem: (kind: string) => `Space · ${kind}`,
-    spaceGone: "Dieser Eintrag ist nicht mehr in Space vorhanden",
+    spaceAdd: "Aus der Bibliothek hinzufügen…",
+    spaceDone: "Bibliothek ausblenden",
+    spaceItem: (kind: string) => `Bibliothek · ${kind}`,
+    spaceGone: "Dieser Eintrag ist nicht mehr in der Bibliothek vorhanden",
     moveUp: "Nach oben",
     moveDown: "Nach unten",
     remove: "Entfernen",
@@ -387,7 +387,7 @@ export const de: ToolsMessages = {
     codec: "Codec",
     audio: "Audio",
     audioHint: "Audio wird immer nach AAC neu codiert.",
-    saveNote: "Ergebnisse erscheinen als Space-Einträge und Dateien in diesem Ordner; bestehende Dateien werden nie überschrieben. Gleichnamige erhalten Nummern (-2, -3).",
+    saveNote: "Ergebnisse erscheinen als Bibliothekseinträge und Dateien in diesem Ordner; bestehende Dateien werden nie überschrieben. Gleichnamige erhalten Nummern (-2, -3).",
     mergeHow: "Clipverbindung",
     mergeHowBody:
       "Runtime liest alle Clips: Bei gleichem Codec, Auflösung, Bildrate, Pixelformat, Audiospuren, Abtastrate und Kanalzahl erfolgt Stream-Kopie ohne folgende Einstellungen. Sonst Neucodierung nach dem ersten Clip; andere Bilder passend skalieren und auffüllen, tonlose Clips erhalten gleich lange Stille. Verwendete Methode und Grund stehen rechts im Protokoll.",
@@ -425,29 +425,29 @@ export const de: ToolsMessages = {
 
 
   toolsHome: {
-    lede: "Eine bestimmte Aufgabe direkt erledigen; ohne Sitzung oder Agentenverbindung. Ergebnisse liegen am Standard-Speicherort und in Space, bereit für weitere Werkzeuge, neues Video oder Agentenübergabe.",
-    foot: "Space-Einträge direkt mit Werkzeugen verarbeiten: Eintrag öffnen und „Mit einem Werkzeug verarbeiten…“ auswählen.",
+    lede: "Eine bestimmte Aufgabe direkt erledigen; ohne Sitzung oder Agentenverbindung. Ergebnisse liegen am Standard-Speicherort und in der Bibliothek, bereit für weitere Werkzeuge, neues Video oder Agentenübergabe.",
+    foot: "Bibliothekseinträge direkt mit Werkzeugen verarbeiten: Eintrag öffnen und „Mit einem Werkzeug verarbeiten…“ auswählen.",
     statusFailed: (message: string) => `Werkzeugstatus konnte nicht gelesen werden; Karten möglicherweise veraltet: ${message}`,
   },
 
   picker: {
     label: "Video auswählen",
-    spaceLabel: "Aus Space auswählen",
+    spaceLabel: "Aus der Bibliothek auswählen",
     countKinds: (kinds: string, n: number) => `Akzeptiert ${kinds} · ${n} verfügbar`,
-    emptySpaceTitle: "Keine verwendbaren Space-Einträge",
+    emptySpaceTitle: "Keine verwendbaren Bibliothekseinträge",
     emptySpaceBody: (kinds: string) => `Dieses Werkzeug akzeptiert ${kinds}. Andere Suche versuchen oder mit lokaler Datei beginnen.`,
-    search: "Space durchsuchen",
+    search: "Bibliothek durchsuchen",
     searchPlaceholder: "Nach Name suchen",
     countTranscript: (n: number) => `${n} mit verfügbarem Transkript; übrige abgeblendet`,
     count: (n: number) => `${n} verfügbar`,
     noProject: "Kein Projekt",
     minutes: (n: number) => `${n} min`,
     emptyTitle: "Keine passenden Videos",
-    emptyBody: "Andere Suche versuchen oder zuerst in Space erstellen.",
+    emptyBody: "Andere Suche versuchen oder zuerst in der Bibliothek erstellen.",
     loading: "Videos werden geladen…",
     failed: (message: string) => `Videoliste konnte nicht geladen werden: ${message}`,
     pending: (n: number) => `${n} ${pluralForm('de', n, { one: "Video ist noch nicht", other: "Videos sind noch nicht" })} vollständig geladen; Transkripte könnten fehlen`,
-    scanning: "Space scannt erstmals; Liste möglicherweise unvollständig",
+    scanning: "Die Bibliothek scannt erstmals; Liste möglicherweise unvollständig",
     shown: (shown: number, total: number) => `Angezeigt: ${shown} von ${total}`,
     more: (n: number) => `Einblenden: ${n} weitere`,
   },
@@ -493,8 +493,8 @@ export const de: ToolsMessages = {
     retried: "Ab dem gestoppten Schritt neu gestartet",
     retryFailed: (message: string) => `Erneuter Versuch fehlgeschlagen: ${message}`,
     open: "Im Editor öffnen",
-    noVideo: "Dieses Video ist noch nicht in Space; gleich erneut prüfen.",
-    noOutputs: "Ergebnisse noch nicht in Space aufgeführt; gleich erneut prüfen.",
+    noVideo: "Dieses Video ist noch nicht in der Bibliothek; gleich erneut prüfen.",
+    noOutputs: "Ergebnisse noch nicht in der Bibliothek aufgeführt; gleich erneut prüfen.",
     again: "Erneut ausführen",
     backToForm: "Zurück zu Einstellungen",
     inTasks: "In Hintergrundaufgaben ansehen",
@@ -513,7 +513,7 @@ export const de: ToolsMessages = {
     needFile: "Zuerst eine Video- oder Audiodatei auswählen",
     needUrl: "Zuerst Link mit http:// oder https:// einfügen",
     needVideo: "Zuerst ein Video auswählen",
-    needEntry: "Zuerst einen Space-Eintrag auswählen",
+    needEntry: "Zuerst einen Bibliothekseintrag auswählen",
     needProject: "Zuerst ein Projekt auswählen",
     needLang: "Zuerst eine Zielsprache auswählen",
     sameLang: "Zielsprache entspricht Quelle; andere wählen",
@@ -528,10 +528,10 @@ export const de: ToolsMessages = {
 
 
   transcribeTool: {
-    lede: "Video oder Audio in Transkript und Untertitel umwandeln. Standardmäßig je eine Transkript- und Untertiteldatei am Speicherort; auch neues Video oder Schreiben in ein vorhandenes Space-Video möglich.",
+    lede: "Video oder Audio in Transkript und Untertitel umwandeln. Standardmäßig je eine Transkript- und Untertiteldatei am Speicherort; auch neues Video oder Schreiben in ein vorhandenes Bibliotheksvideo möglich.",
     targetTitle: "Ergebnis",
     targetNone:
-      "Transkript (.txt) und Untertitel (.srt) werden unten gespeichert und als Space-Einträge aufgeführt; später übersetzbar, vorlesbar oder für ein neues Video verwendbar.",
+      "Transkript (.txt) und Untertitel (.srt) werden unten gespeichert und als Bibliothekseinträge aufgeführt; später übersetzbar, vorlesbar oder für ein neues Video verwendbar.",
     createFile:
       "Materialien bleiben am Ort und werden verknüpft statt kopiert. Ergebnis ist ein neues Projektvideo mit Transkript und bearbeitbarer Untertitel-Ebene.",
 

@@ -450,7 +450,7 @@ export function TranslationList({
         {only === 'trans' ? null : <span>{C.original(sourceLanguage)}</span>}
         <span>{C.translation(language ? languageName(language) : C.unnamed)}</span>
       </div>
-      <div ref={listRef} className={`${list} bc-scroll`} {...virtual.containerProps}>
+      <div ref={listRef} className={`${list} cc-scroll`} {...virtual.containerProps}>
         {rows.length ? null : <div className={muted}>{C.noRows}</div>}
         {virtual.segments.map((segment, n) => {
           if ('gap' in segment) return <div key={`gap:${n}`} aria-hidden style={{ height: segment.gap }} />;
@@ -537,12 +537,12 @@ const PairCard = memo(function PairCard({
     <div className={card({ isOn: on, isEditing: editing, isGone: gone })} data-sentence={row.sentence?.id}>
       <span className={accent({ isOn: on, isEditing: editing, isStale: stale, isGone: gone })} aria-hidden />
       <div className={cardHead}>
-        <span className={`${number} bc-tabular`}>{index + 1}</span>
+        <span className={`${number} cc-tabular`}>{index + 1}</span>
         {gone ? null : (
           <TooltipTrigger>
             <RACButton
               className={({ isHovered, isFocusVisible }) =>
-                `${time({ isMissing: at === null, isHovered: isHovered && at !== null, isFocusVisible })} bc-tabular`
+                `${time({ isMissing: at === null, isHovered: isHovered && at !== null, isFocusVisible })} cc-tabular`
               }
               onPress={() => at !== null && onSeek(at)}>
               {at === null ? '—' : formatClock(at, { tenths: true })}

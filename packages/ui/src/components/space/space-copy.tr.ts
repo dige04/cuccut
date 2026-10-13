@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 
 export const tr: SpaceMessages = {
   searchPlaceholder: "Adlarda, dosyalarda veya videolarda söylenenlerde ara",
-  searchLabel: "Space içinde ara",
+  searchLabel: "Kitaplık’ta ara",
 
   // 列表与菜单
   openVideo: "Video aç",
@@ -128,7 +128,7 @@ export const tr: SpaceMessages = {
   // 删除视频（产品设计 §4.9）
   trashVideoTitle: "Bu video silinsin mi?",
   trashVideoBody: "Video klasörünün tamamı projenin Çöp sepetine taşınır ve geri yüklenebilir. Bağlı özgün medyalar yerinde kalır.",
-  trashVideoRelated: (n) => `Bu videodan dışa aktarılan veya oluşturulan ${n} öğe Space içinde kalır; videoyla birlikte silinmez:`,
+  trashVideoRelated: (n) => `Bu videodan dışa aktarılan veya oluşturulan ${n} öğe Kitaplık’ta kalır; videoyla birlikte silinmez:`,
   trashVideoConfirm: "Videoyu sil",
 
   // 彻底删除
@@ -143,7 +143,7 @@ export const tr: SpaceMessages = {
   // 改名
   renameTitle: "Yeniden adlandır",
   renameLabel: "Görünen ad",
-  renameHint: (fileName) => `Yalnızca Space içinde görünen adı değiştirir; dosya aynı kalır. ${fileName} adına dönmek için boş bırakın.`,
+  renameHint: (fileName) => `Yalnızca Kitaplık’ta görünen adı değiştirir; dosya aynı kalır. ${fileName} adına dönmek için boş bırakın.`,
   save: "Kaydet",
 
   // 来源视频改过（产品设计 §4.6）
@@ -177,10 +177,10 @@ export const tr: SpaceMessages = {
   openForEdit: "Düzenlemek için aç",
   newVideo: "Yeni video",
   revealUnavailable: "Bu dosya hiçbir proje veya oturum klasöründe değil; gösterilecek konum yok",
-  sidebarLabel: "Space kategorileri",
+  sidebarLabel: "Kitaplık kategorileri",
   kindsHeader: "Kategoriler",
   mineHeader: "Düzenle",
-  sidebarNote: "Space tüm projelerinizdeki videoları, medyaları ve çıktıları gösterir. Dosyalar kendi proje klasörlerinde kalır. Bir videodan dışa aktarılan veya üretilen dosyalar o videonun altında toplanır; türe göre göz atınca tek tek listelenir.",
+  sidebarNote: "Kitaplık tüm projelerinizdeki videoları, medyaları ve çıktıları gösterir. Dosyalar kendi proje klasörlerinde kalır. Bir videodan dışa aktarılan veya üretilen dosyalar o videonun altında toplanır; türe göre göz atınca tek tek listelenir.",
   all: "Hepsi",
   emptyFiltered: "Eşleşen öğe yok",
   emptyTrash: "Çöp sepeti boş",
@@ -199,12 +199,12 @@ export const tr: SpaceMessages = {
   issuesTitle: (n) => `${n} klasör tam listelenemedi`,
   issueTruncated: (detail) => `Çok fazla dosya var; yalnızca bir kısmı listelendi: ${detail}`,
   issueUnreadable: (detail) => `Okunamadı: ${detail}`,
-  preparing: "Space hazırlanıyor…",
+  preparing: "Kitaplık hazırlanıyor…",
   preparingBody: "İlk kullanımda proje klasörlerinin taranması gerekir. Biraz sürer.",
   createIn: (project,hint) => `${project} adlı projede · ${hint}`,
   whichProjectFor: (label) => `${label}: hangi proje`,
   entryActions: (name) => `${name} adlı öğenin eylemleri`,
-  entriesLabel: "Space öğeleri",
+  entriesLabel: "Kitaplık öğeleri",
   columnName: "Ad",
   columnKind: "Tür",
   columnSource: "Kaynak",

@@ -208,7 +208,7 @@ const muted = style({ font: 'ui-sm', color: 'gray-600', paddingY: 24, textAlign:
  * 外边距（虚拟列表按行的 border-box 高排），卡间距是这一层的上内边距 8px，第一张离顶也是 8px。
  */
 const cueSlot = style({ position: 'relative', paddingTop: 8 });
-/** 「并入上一条」（原型 ui.css .sbseam）：骑在卡的上边线上、悬停才出（editor.css 的 .bc-cue-seam），不占布局。 */
+/** 「并入上一条」（原型 ui.css .sbseam）：骑在卡的上边线上、悬停才出（editor.css 的 .cc-cue-seam），不占布局。 */
 // 卡的上边线在这一层上沿往下 8px：钮高 20，上沿在 -2px，正好骑在线上（连焦点环探进上一行 4px，盖在它上面）。
 const seamRow = style({
   position: 'absolute',
@@ -809,7 +809,7 @@ function CueEditor({ record, sequence, items }: { record: DocumentRecord; sequen
           onReplaceAll={() => replace(matches)}
         />
       ) : null}
-      <div ref={listRef} className={`${list} bc-scroll`} {...rows.containerProps}>
+      <div ref={listRef} className={`${list} cc-scroll`} {...rows.containerProps}>
         {cues.cues.length ? null : <div className={muted}>{C.noSentences}</div>}
         {rows.segments.map((segment, n) => {
           if ('gap' in segment) return <div key={`gap:${n}`} aria-hidden style={{ height: segment.gap }} />;
@@ -1014,9 +1014,9 @@ const CueCard = memo(function CueCard({
   const onSeek = () => actions.current.seek(cue);
   const onBegin = (caret: number | 'end') => actions.current.begin(cue, caret);
   return (
-    <div ref={measure} className={`${cueSlot} bc-cue-slot`} role="listitem" aria-setsize={count} aria-posinset={index + 1}>
+    <div ref={measure} className={`${cueSlot} cc-cue-slot`} role="listitem" aria-setsize={count} aria-posinset={index + 1}>
       {seam === null ? null : (
-        <div className={`${seamRow} bc-cue-seam`}>
+        <div className={`${seamRow} cc-cue-seam`}>
           {seam === 'speaker' ? (
             <span className={seamPill({ isDisabled: true })}>{C.seamSpeaker}</span>
           ) : (
@@ -1032,7 +1032,7 @@ const CueCard = memo(function CueCard({
       <div className={cueCard({ isOn: on, isEditing: !!editing })} data-cue={cue.id}>
         <span className={cueAccent({ isOn: on, isEditing: !!editing })} aria-hidden />
         <div className={cueHead}>
-          <span className={`${cueNumber} bc-tabular`}>{index + 1}</span>
+          <span className={`${cueNumber} cc-tabular`}>{index + 1}</span>
           {cue.speaker ? <span className={speaker}>{cue.speaker}</span> : null}
           <TooltipTrigger>
             <ActionButtonLike missing={at === null} onPress={onSeek}>
@@ -1041,7 +1041,7 @@ const CueCard = memo(function CueCard({
             <Tooltip>{at === null ? C.cutAway : C.seekHere}</Tooltip>
           </TooltipTrigger>
           {editing || speed.level === 'none' ? null : (
-            <span className={`${cps({ level: speed.level === 'ok' ? undefined : speed.level })} bc-tabular`} title={C.readingSpeed}>
+            <span className={`${cps({ level: speed.level === 'ok' ? undefined : speed.level })} cc-tabular`} title={C.readingSpeed}>
               {speed.value} cps
             </span>
           )}
@@ -1087,7 +1087,7 @@ const CueCard = memo(function CueCard({
 function ActionButtonLike({ missing, onPress, children }: { missing: boolean; onPress(): void; children: ReactNode }) {
   return (
     <RACButton
-      className={({ isHovered }) => `${cueTime({ isMissing: missing, isHovered: isHovered && !missing })} bc-tabular`}
+      className={({ isHovered }) => `${cueTime({ isMissing: missing, isHovered: isHovered && !missing })} cc-tabular`}
       onPress={() => !missing && onPress()}>
       {children}
     </RACButton>

@@ -11,30 +11,29 @@ import { COMMON_COPY } from './services-copy.ts';
  * 卡片沿用原型的 `Card layer`：圆角 10、gray-50 底、1px gray-200 边。
  */
 
-export const lede = style({ margin: 0, maxWidth: '[640px]', font: 'body-sm', color: 'gray-600' });
+export const lede = style({ margin: 0, font: 'body-sm', color: 'gray-600' });
 export const strong = style({ fontWeight: 'bold', color: 'gray-800' });
 export const detail = style({ margin: 0, font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere' });
 export const detailXs = style({ margin: 0, font: 'ui-xs', color: 'gray-600' });
 export const panel = style({
   boxSizing: 'border-box',
-  maxWidth: '[640px]',
-  padding: 16,
+  paddingX: 20,
+  paddingY: 16,
   marginTop: 12,
-  borderRadius: 'lg',
+  borderRadius: '[24px]',
   backgroundColor: 'gray-50',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
 });
 /** 原型 `.t-section`：11px 粗体、灰、字距略开。 */
-export const sectionTitle = style({ margin: 0, marginTop: 24, font: 'ui-xs', fontWeight: 'bold', color: 'gray-600', letterSpacing: '[0.04em]' });
+export const sectionTitle = style({ margin: 0, marginTop: 28, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 
 const card = style({
   boxSizing: 'border-box',
-  maxWidth: '[640px]',
-  padding: 16,
-  marginTop: 20,
-  borderRadius: 'lg',
+  paddingX: 20,
+  paddingY: 16,
+  borderRadius: '[24px]',
   backgroundColor: 'gray-50',
   borderWidth: 1,
   borderStyle: 'solid',
@@ -68,7 +67,7 @@ const mark = style({
   justifyContent: 'center',
   flexShrink: 0,
   size: 40,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   backgroundColor: { tone: { off: 'gray-100', on: 'green-200', error: 'orange-200' } },
   color: { tone: { off: 'gray-700', on: 'green-1000', error: 'orange-1000' } },
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
@@ -160,12 +159,15 @@ export function FlipButton({
   disabled,
   onFlip,
   size,
+  primary = true,
 }: {
   id: ServiceId;
   state: ServiceState;
   disabled: boolean;
   onFlip?: (on: boolean) => void;
   size: 'S' | 'M';
+  /** The one tinted action of the view (a service's own page); lists of services keep every button neutral. */
+  primary?: boolean;
 }) {
   const action = serviceQuickAction(id, state);
   // 没有后端的服务不给起停按钮（原因写在旁边），免得像是「暂时按不了」。
@@ -187,7 +189,7 @@ export function FlipButton({
   }
   return (
     <Button
-      variant="accent"
+      variant={primary ? 'accent' : 'secondary'}
       size={size}
       isDisabled={disabled || !onFlip}
       onPress={() => onFlip?.(true)}>

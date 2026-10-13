@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 
 export const zhHant: SpaceMessages = {
   searchPlaceholder: '搜尋名稱、檔案或影片中說過的話',
-  searchLabel: '搜尋 Space',
+  searchLabel: '搜尋資料庫',
 
   // 列表与菜单
   openVideo: '開啟影片',
@@ -136,7 +136,7 @@ export const zhHant: SpaceMessages = {
   // 删除视频（产品设计 §4.9）
   trashVideoTitle: '要刪除這部影片嗎？',
   trashVideoBody: '整個影片資料夾會移到專案的垃圾桶，之後可以回復。連結的原始素材會留在原處。',
-  trashVideoRelated: (n: number) => `由它匯出或生成的 ${n} 個項目會留在 Space 中，不會隨影片刪除：`,
+  trashVideoRelated: (n: number) => `由它匯出或生成的 ${n} 個項目會留在資料庫中，不會隨影片刪除：`,
   trashVideoConfirm: '刪除影片',
 
   // 彻底删除
@@ -152,7 +152,7 @@ export const zhHant: SpaceMessages = {
   // 改名
   renameTitle: '重新命名',
   renameLabel: '顯示名稱',
-  renameHint: (fileName: string) => `只會更改 Space 中顯示的名稱，檔案本身不變。留空則回到「${fileName}」。`,
+  renameHint: (fileName: string) => `只會更改資料庫中顯示的名稱，檔案本身不變。留空則回到「${fileName}」。`,
   save: '儲存',
 
   // 来源视频改过（产品设计 §4.6）
@@ -188,10 +188,10 @@ export const zhHant: SpaceMessages = {
   openForEdit: '開啟以編輯',
   newVideo: '新增影片',
   revealUnavailable: '這個檔案不在任何專案或對話資料夾中，因此沒有可顯示的位置',
-  sidebarLabel: 'Space 分類',
+  sidebarLabel: '資料庫分類',
   kindsHeader: '分類',
   mineHeader: '整理',
-  sidebarNote: 'Space 顯示你所有專案中的影片、素材和產出。檔案仍留在各自的專案資料夾中。從影片匯出或產生的檔案會收在影片裡，依類型瀏覽時逐一列出。',
+  sidebarNote: '資料庫顯示你所有專案中的影片、素材和產出。檔案仍留在各自的專案資料夾中。從影片匯出或產生的檔案會收在影片裡，依類型瀏覽時逐一列出。',
   all: '全部',
   emptyFiltered: '沒有符合的項目',
   emptyTrash: '垃圾桶是空的',
@@ -210,12 +210,12 @@ export const zhHant: SpaceMessages = {
   issuesTitle: (n: number) => `${n} 個資料夾未完整列出`,
   issueTruncated: (detail: string) => `檔案太多，只列出了一部分：${detail}`,
   issueUnreadable: (detail: string) => `無法讀取：${detail}`,
-  preparing: '正在準備 Space…',
+  preparing: '正在準備資料庫…',
   preparingBody: '第一次需要掃描專案資料夾，請稍候。',
   createIn: (project: string, hint: string) => `在「${project}」中 · ${hint}`,
   whichProjectFor: (label: string) => `${label}：哪個專案`,
   entryActions: (name: string) => `「${name}」的操作`,
-  entriesLabel: 'Space 項目',
+  entriesLabel: '資料庫項目',
   columnName: '名稱',
   columnKind: '類型',
   columnSource: '來源',

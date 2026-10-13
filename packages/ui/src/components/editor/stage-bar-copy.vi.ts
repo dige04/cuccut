@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const vi: StageBarMessages = {
-  bar: 'Điều khiển bản xem trước',
   ratio: 'Tỷ lệ khung hình',
   ratioReadOnly: 'Tỷ lệ khung hình · video chỉ đọc',
   ratioApplied: (ratio: string) => `Đã đổi tỷ lệ khung hình thành ${ratio}`,

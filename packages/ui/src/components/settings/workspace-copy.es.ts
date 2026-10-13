@@ -1,0 +1,27 @@
+import type { WorkspaceMessages } from './workspace-copy.ts';
+
+export const es: WorkspaceMessages = {
+  aside: 'Todo lo de aquí se aplica a todos los proyectos',
+  generalBlurb: 'Cómo se ve y en qué idioma habla CucCut, dónde se guardan las descargas y qué puede obtener de internet.',
+  shortcutsBlurb: 'Teclas que funcionan en cualquier parte de CucCut. Los atajos del editor están en la Ayuda (F1).',
+  shortcutsPanel: 'En cualquier parte de CucCut',
+  fontsBlurb: 'Fuentes para subtítulos y títulos: de dónde vienen y las que ya hay en este ordenador.',
+  privacyBlurb: 'Qué se queda en este ordenador, qué se puede enviar a proveedores en la nube y qué pueden hacer los agentes sin preguntar.',
+  diagnosticsBlurb: 'El Runtime local, sus registros y cuánto de este ordenador pueden usar las tareas en segundo plano.',
+  aboutBlurb: 'Versiones de la app, la interfaz y el Runtime, y cómo se actualiza CucCut.',
+  checking: 'Comprobando…',
+  noAgent: 'Ningún agente listo',
+  shortcutCount: (n) => (n === 1 ? '1 atajo' : `${n} atajos`),
+  skillCount: (n) => (n === 0 ? 'Ninguno todavía' : n === 1 ? '1 skill' : `${n} skills`),
+  glossaryCount: (n) => (n === 0 ? 'Ninguno todavía' : n === 1 ? '1 glosario' : `${n} glosarios`),
+  grantCount: (n) => (n === 0 ? 'Sin permisos activos' : n === 1 ? '1 permiso activo' : `${n} permisos activos`),
+  runtimeOn: 'Runtime conectado',
+  runtimeOff: 'Runtime sin conectar',
+  installed: (n) => (n === 0 ? 'Ninguno instalado' : n === 1 ? '1 instalado' : `${n} instalados`),
+  noDefault: 'Sin predeterminado',
+  version: (version) => `Versión ${version}`,
+  desktopOnly: 'Solo en la app de escritorio',
+  notYet: 'Aún no disponible',
+  loadFailed: 'No se pudo cargar',
+  fontsSummary: 'Para subtítulos y títulos',
+};

@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
-import { DEFAULT_AGENT_MODE, type Id } from '@cuccut/protocol';
+import { useState } from 'react';
+import { DEFAULT_AGENT_MODE, type AttachmentRef, type Id, type SkillSendRef, type TemplateSendRef } from '@cuccut/protocol';
 import { ToastQueue } from '@react-spectrum/s2';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
+import { Scissors, Sparkles } from 'lucide-react';
+import { cn } from 'cn';
 import { S } from './shell-copy.ts';
 import { HOME_COPY } from '../copy.ts';
 import { applyAgentChange, draftSelection } from '../model/agent-choice.ts';
@@ -20,6 +21,7 @@ import {
 import { starterTarget, type HomeStarter } from '../model/home-starters.ts';
 import { templateOf, type HomeTemplate } from '../model/home-templates.ts';
 import { slotLabels } from '../model/prompt-slots.ts';
+import { urlValid } from '../model/new-flow.ts';
 import { recentVideos, videoTargetOf } from '../model/space.ts';
 import { workspaceKey } from '../model/workspace.ts';
 import { setDefaultAccessMode } from '../runtime/agent-commands.ts';
@@ -38,9 +40,14 @@ import { useSkills } from '../state/skills-store.ts';
 import { useSpace } from '../state/space-store.ts';
 import { useStartBrief, useStartBriefOf } from '../state/start-brief-store.ts';
 import { useVideo } from '../state/video-store.ts';
+import { Glass } from '../cc/ui/glass.tsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../cc/ui/tabs.tsx';
 import { Composer } from './composer.tsx';
+import { BlankCanvas } from './landing/blank-canvas.tsx';
+import { ClipStart } from './landing/clip-start.tsx';
+import { LANDING_COPY } from './landing/landing-copy.ts';
 import { LegacyImportBanner } from './legacy-import/legacy-import-task.tsx';
-import { createBlankVideo } from './start/blank-video.ts';
+import { createBlankVideo, type BlankRatio } from './start/blank-video.ts';
 import { BriefTokens } from './start/brief-tokens.tsx';
 import { GateCard } from './start/gate-card.tsx';
 import { HomeStarters } from './start/home-starters.tsx';
@@ -51,38 +58,17 @@ import { SlotHint } from './start/slot-hint.tsx';
 import { useTemplateCatalogLoader } from './start/use-templates.ts';
 import { useEditorReference } from './use-editor-reference.ts';
 import { focusPromptEnd } from './use-prompt-value.ts';
-import { useNarrow } from './use-narrow.ts';
-
-// 标题和输入框是这一页唯一的主角：一栏最宽 760，内容不满一屏时整块在视口里居中（上下 auto），模板网格超出一屏时照常滚动。
-const page = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0, overflowY: 'auto' });
-const column = style({
-  width: 'full',
-  maxWidth: 760,
-  marginX: 'auto',
-  marginY: 'auto',
-  paddingX: { default: 24, isNarrow: 12 },
-  paddingTop: 32,
-  paddingBottom: 48,
-  boxSizing: 'border-box',
-});
-const title = style({
-  margin: 0,
-  marginBottom: 24,
-  fontSize: '[28px]',
-  fontWeight: 'bold',
-  lineHeight: '[1.3]',
-  color: 'gray-900',
-  textAlign: 'center',
-});
-
-/** 「PDF 或文档」能选的文件（原型 `MaterialPlus` 的 accept）。 */
 
 /**
- * 新会话的起始页（产品设计 §3.2.1，原型 page-new.jsx 的 Home）：一句标题、居中的输入框（带素材）、
- * 项目行、Agent 用不了时的指引卡，下面是「快捷开始」一行（点一下把一句提示词放进输入框，行尾新建空白视频）和模板网格。
- * 没有表单，工具从左侧导航进。第一句话发出时才真正建会话，侧栏里点十次「新建会话」不会长出十条空会话。
+ * The start page of a new session, laid out after agentcut's home (`NewProject` + `StartChatPanel`): two ways in as
+ * centred tabs — "Create a video" (the heading and the composer in one thin glass panel, the project row, the blank
+ * canvas shapes) and "Clip a long video" (the drop card) — then the quick start cards and the template shelf as solid
+ * sections. The session is only created when the first message goes out.
+ *
+ * `layout`: `page` sits inside a page that scrolls as a whole (the landing page); `column` scrolls on its own (the
+ * session layout's conversation column, which may be narrow — the grids follow the container's width, not the window's).
  */
-export function StartPage({ projectId: routeProjectId }: { projectId: string | null }) {
+export function StartPage({ projectId: routeProjectId, layout = 'column' }: { projectId: string | null; layout?: 'page' | 'column' }) {
   const runtime = useRuntime();
   const projects = useDirectory((s) => s.projects);
   const pickable = projects.filter((p) => !p.archived).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -135,9 +121,10 @@ export function StartPage({ projectId: routeProjectId }: { projectId: string | n
   // 还在检测 Agent 时不下结论，不闪指引卡。
   const gate = homeGate(drivers, checking);
   const guide = gateGuide(gate);
-  // 量外层页面而不是那一栏：栏的左右留白随窄不窄变，量它会来回翻转。
-  const pageRef = useRef<HTMLDivElement>(null);
-  const narrow = useNarrow(pageRef, 760);
+  // "Create a video" or "Clip a long video" (agentcut's `make` / `clips`).
+  const [flow, setFlow] = useState<'make' | 'clips'>('make');
+  // The clip card's field lives here so switching tabs (which unmounts the hidden panel) keeps what was typed.
+  const [clipSource, setClipSource] = useState('');
 
   const patch = (next: Partial<HomeBriefState>) => useStartBrief.getState().patch(draftKey, next);
   const currentBrief = () => useStartBrief.getState().briefs[draftKey] ?? EMPTY_HOME_BRIEF;
@@ -200,8 +187,9 @@ export function StartPage({ projectId: routeProjectId }: { projectId: string | n
     fillPrompt(text, () => patch({ template: before.template }));
   };
 
-  // 新建空白视频（原型 `createBlank`）：16:9，建在这一页的项目里（没选项目时先建一个：没有会话，视频没有别处可放）。
-  const createBlank = () => void createBlankVideo(runtime, projectId, '16:9');
+  // A new blank video (prototype `createBlank`) of the chosen shape, in this page's project (one is created first when
+  // none is picked: without a session the video has nowhere else to live).
+  const createBlank = (ratio: BlankRatio) => createBlankVideo(runtime, projectId, ratio);
 
   // 选文件是异步的：并进去时按 store 里最新的那份算，不用渲染时的快照。
   const addPaths = (paths: readonly string[]) => {
@@ -277,125 +265,190 @@ export function StartPage({ projectId: routeProjectId }: { projectId: string | n
     });
   };
 
+  /**
+   * Creates the session and sends its first message: the composer's send, and the clip card's prefilled request.
+   * `materials` are local paths written into the message (homeBrief); `scene` is the template on the composer.
+   * Composer sends clear the start brief and, on a failed send after the session exists, carry the draft's images and
+   * skills over to it; clip starts leave the composer's draft alone.
+   */
+  const startSession = async (
+    raw: string,
+    attachments: AttachmentRef[],
+    skills: SkillSendRef[],
+    from: { materials: readonly string[]; scene?: TemplateSendRef; composer: boolean },
+  ): Promise<boolean> => {
+    // 「转录并翻译」填的目标语言记下来，下次点这条快捷开始直接沿用（认不出那句话就不记）。
+    const target = from.composer ? starterTarget(raw) : null;
+    if (target) useHomeMemory.getState().setTarget(target);
+    const text = homeBrief(raw, { images: attachments.length, materials: [...from.materials] });
+    let conversationId: string | null = null;
+    try {
+      // 只传草稿上选过的；没选的由 Runtime 按偏好给（默认 Agent、它的默认模型与强度）。
+      // 没选过的不传，会话跟着设置走；选过的同时记成新会话的默认（原型「全局种子」）。
+      const conversation = await runtime.createConversation(projectId, {
+        ...(draftMode ? { accessMode: draftMode } : {}),
+        ...(choice?.driverId ? { driverId: choice.driverId } : {}),
+        ...(choice && 'model' in choice ? { model: choice.model ?? null } : {}),
+        ...(choice && 'effort' in choice ? { effort: choice.effort ?? null } : {}),
+      });
+      conversationId = conversation.id;
+      if (draftMode && draftMode !== defaultMode) void setDefaultAccessMode(runtime, draftMode).catch(() => {});
+      useShell.getState().setDraftAccessMode(draftKey, null);
+      useShell.getState().setDraftAgent(draftKey, null);
+      if (from.composer) useStartBrief.getState().clear(draftKey);
+      const context = await editor.capture();
+      // 编辑器开着的话保持打开：会话换成刚建的这个。
+      const { route } = useShell.getState();
+      const pane = route.tab === 'home' ? route.pane : undefined;
+      if (route.tab === 'home') useShell.getState().carryWorkspace(workspaceKey(route.conversationId, route.projectId), conversation.id);
+      go({ tab: 'home', conversationId: conversation.id, projectId: null, ...(pane ? { pane } : {}) });
+      await runtime.send(
+        conversation.id,
+        text,
+        context,
+        attachments.map((a) => a.id),
+        from.scene,
+        skills,
+      );
+      editor.reset();
+      return true;
+    } catch (error) {
+      ToastQueue.negative(sendFailureMessage(error), { timeout: 5000 });
+      // 会话已经建好：把整段话（含设置与素材）、图片与点选的 skill 放回那个会话的输入框，不吞掉用户的输入。
+      // 场景模板挂不到会话的输入框上（那里没有模板），这一次的模板随之丢掉。
+      if (conversationId) {
+        useShell.getState().setDraft(conversationId, text);
+        if (from.composer) {
+          useDraftImages.getState().move(draftKey, conversationId);
+          useDraftSkills.getState().move(draftKey, conversationId);
+        }
+        return true;
+      }
+      // 会话没建成：输入框放回原话，模板、设置与素材还留在起始页上。
+      return false;
+    }
+  };
+
+  // "Clip a long video": the same session start with a prefilled request. A link goes into the message (the agent
+  // fetches it with the download tool); a local file rides along as an asset.
+  const startClips = (source: string) => {
+    const link = urlValid(source);
+    return startSession(link ? `${LANDING_COPY.clips.prompt}\n${source}` : LANDING_COPY.clips.prompt, [], [], {
+      materials: link ? [] : [source],
+      composer: false,
+    });
+  };
+
+  const ready = gate === null || gate.ok;
+
   return (
-    <div ref={pageRef} className={page}>
-      <div className={column({ isNarrow: narrow })}>
+    <div className={cn('@container flex flex-col', layout === 'column' && 'cc-scroll min-h-0 flex-1 overflow-y-auto')}>
+      <div className={cn('mx-auto box-border flex w-full flex-col gap-12', layout === 'column' && 'max-w-6xl px-4 pt-4 pb-12 @xl:px-6')}>
         {/* 旧版项目导入在跑 / 留了没导入的（只在桌面端有导入）。 */}
         <LegacyImportBanner />
-        <h1 className={title}>{HOME_COPY.title}</h1>
-        <Composer
-          draftKey={draftKey}
-          driverId={driverId}
-          model={model}
-          effort={effort}
-          lockedTo={null}
-          onAgentChange={(change) => useShell.getState().setDraftAgent(draftKey, applyAgentChange(choice, driverId, change))}
-          accessMode={accessMode}
-          onAccessModeChange={(mode) => useShell.getState().setDraftAccessMode(draftKey, mode)}
-          busy={false}
-          autoFocus
-          reference={editor.reference}
-          placeholder={brief.template ? HOME_COPY.templatePlaceholder : HOME_COPY.placeholder}
-          mentionScope={{ projectId, conversationId: null }}
-          start={{
-            tokens: (
-              <BriefTokens
-                skills={pickedSkills}
-                onRemoveSkill={(id) => useDraftSkills.getState().remove(draftKey, id)}
-                template={template}
-                materials={brief.materials}
-                onRemoveTemplate={() => pickScene(null)}
-                onRemoveMaterial={(path) => patch({ materials: brief.materials.filter((m) => m.path !== path) })}
+        <div className="mx-auto w-full max-w-3xl pt-4 @3xl:pt-10">
+          <Tabs value={flow} onValueChange={(value) => setFlow(value === 'clips' ? 'clips' : 'make')} className="gap-7">
+            <TabsList data-cc className="mx-auto max-w-full" aria-label={LANDING_COPY.tabs}>
+              <TabsTrigger value="make">
+                <Sparkles aria-hidden />
+                {LANDING_COPY.create}
+              </TabsTrigger>
+              <TabsTrigger value="clips">
+                <Scissors aria-hidden />
+                {LANDING_COPY.clip}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="make" className="flex flex-col gap-6">
+              <div className="flex flex-col gap-3 text-center">
+                <h1 className="m-0 text-3xl leading-tight font-medium tracking-tight text-balance text-foreground @3xl:text-4xl">
+                  {LANDING_COPY.heading}
+                </h1>
+                <p className="m-0 text-sm leading-relaxed text-pretty text-muted-foreground">{LANDING_COPY.lede}</p>
+              </div>
+              <Glass shape="panel" thickness="thin" className="p-3 text-foreground @xl:p-4">
+                <div aria-hidden className="mb-2 px-1 text-sm font-medium">
+                  {LANDING_COPY.composerLabel}
+                </div>
+                <Composer
+                  draftKey={draftKey}
+                  driverId={driverId}
+                  model={model}
+                  effort={effort}
+                  lockedTo={null}
+                  onAgentChange={(change) => useShell.getState().setDraftAgent(draftKey, applyAgentChange(choice, driverId, change))}
+                  accessMode={accessMode}
+                  onAccessModeChange={(mode) => useShell.getState().setDraftAccessMode(draftKey, mode)}
+                  busy={false}
+                  autoFocus
+                  reference={editor.reference}
+                  placeholder={brief.template ? HOME_COPY.templatePlaceholder : HOME_COPY.placeholder}
+                  mentionScope={{ projectId, conversationId: null }}
+                  start={{
+                    tokens: (
+                      <BriefTokens
+                        skills={pickedSkills}
+                        onRemoveSkill={(id) => useDraftSkills.getState().remove(draftKey, id)}
+                        template={template}
+                        materials={brief.materials}
+                        onRemoveTemplate={() => pickScene(null)}
+                        onRemoveMaterial={(path) => patch({ materials: brief.materials.filter((m) => m.path !== path) })}
+                      />
+                    ),
+                    ready,
+                    selectSlot: slotTick,
+                    // 只选了模板、没写一句话不能发；附了图片或素材可以（Agent 用不了时输入框自己挡住）。
+                    canSendEmpty: (images) => canStartHome({ text: '', images, materials: brief.materials.length, gate: null }).ok,
+                    onPaths: addPaths,
+                    recent: {
+                      items: recent.map((entry) => ({
+                        id: entry.id,
+                        label: entry.name,
+                        description: projects.find((p) => p.id === entry.source.projectId)?.name ?? entry.relPath,
+                      })),
+                      onPick: pickRecent,
+                    },
+                  }}
+                  onSend={(raw, attachments, skills) => {
+                    // 素材在发出去时写进这条消息（原型 `AgentHero` 的 brief），没填的待填项写成「[label]」（规范 §5.5，homeBrief）；挂着的场景模板与点选的 skill 只传标识，
+                    // 简报引导、模板正文与 SKILL.md 由 Runtime 拼给智能体（模板包规范 §5.2、产品设计 §6.9），
+                    // 会话里的消息另带「模板：标题」「Skill：名称」的标记。
+                    const scene = brief.template
+                      ? { id: brief.template, ...(template ? { version: template.version, language: template.language } : {}) }
+                      : undefined;
+                    return startSession(raw, attachments, skills, {
+                      materials: brief.materials.map((m) => m.path),
+                      ...(scene ? { scene } : {}),
+                      composer: true,
+                    });
+                  }}
+                />
+                <ProjectPicker
+                  project={project ?? null}
+                  projects={pickable}
+                  noneDisabled={!!videoProjectId}
+                  onSelect={switchProject}
+                />
+                <SlotHint labels={ready ? slots : []} onNext={() => setSlotTick((n) => n + 1)} />
+                <BlankCanvas onCreate={createBlank} />
+              </Glass>
+              {guide ? <GateCard guide={guide} /> : null}
+            </TabsContent>
+            <TabsContent value="clips" className="flex flex-col gap-4">
+              {guide ? <GateCard guide={guide} /> : null}
+              <ClipStart
+                onStart={startClips}
+                blocked={ready ? null : LANDING_COPY.clips.needsAgent}
+                source={clipSource}
+                onSourceChange={setClipSource}
               />
-            ),
-            ready: gate === null || gate.ok,
-            selectSlot: slotTick,
-            // 只选了模板、没写一句话不能发；附了图片或素材可以（Agent 用不了时输入框自己挡住）。
-            canSendEmpty: (images) => canStartHome({ text: '', images, materials: brief.materials.length, gate: null }).ok,
-            onPaths: addPaths,
-            recent: {
-              items: recent.map((entry) => ({
-                id: entry.id,
-                label: entry.name,
-                description: projects.find((p) => p.id === entry.source.projectId)?.name ?? entry.relPath,
-              })),
-              onPick: pickRecent,
-            },
-          }}
-          onSend={async (raw, attachments, skills) => {
-            // 素材在发出去时写进这条消息（原型 `AgentHero` 的 brief），没填的待填项写成「[label]」（规范 §5.5，homeBrief）；挂着的场景模板与点选的 skill 只传标识，
-            // 简报引导、模板正文与 SKILL.md 由 Runtime 拼给智能体（模板包规范 §5.2、产品设计 §6.9），
-            // 会话里的消息另带「模板：标题」「Skill：名称」的标记。
-            const sceneRef = brief.template
-              ? { id: brief.template, ...(template ? { version: template.version, language: template.language } : {}) }
-              : undefined;
-            // 「转录并翻译」填的目标语言记下来，下次点这条快捷开始直接沿用（认不出那句话就不记）。
-            const target = starterTarget(raw);
-            if (target) useHomeMemory.getState().setTarget(target);
-            const text = homeBrief(raw, {
-              images: attachments.length,
-              materials: brief.materials.map((m) => m.path),
-            });
-            let conversationId: string | null = null;
-            try {
-              // 只传草稿上选过的；没选的由 Runtime 按偏好给（默认 Agent、它的默认模型与强度）。
-              // 没选过的不传，会话跟着设置走；选过的同时记成新会话的默认（原型「全局种子」）。
-              const conversation = await runtime.createConversation(projectId, {
-                ...(draftMode ? { accessMode: draftMode } : {}),
-                ...(choice?.driverId ? { driverId: choice.driverId } : {}),
-                ...(choice && 'model' in choice ? { model: choice.model ?? null } : {}),
-                ...(choice && 'effort' in choice ? { effort: choice.effort ?? null } : {}),
-              });
-              conversationId = conversation.id;
-              if (draftMode && draftMode !== defaultMode) void setDefaultAccessMode(runtime, draftMode).catch(() => {});
-              useShell.getState().setDraftAccessMode(draftKey, null);
-              useShell.getState().setDraftAgent(draftKey, null);
-              useStartBrief.getState().clear(draftKey);
-              const context = await editor.capture();
-              // 编辑器开着的话保持打开：会话换成刚建的这个。
-              const { route } = useShell.getState();
-              const pane = route.tab === 'home' ? route.pane : undefined;
-              if (route.tab === 'home') useShell.getState().carryWorkspace(workspaceKey(route.conversationId, route.projectId), conversation.id);
-              go({ tab: 'home', conversationId: conversation.id, projectId: null, ...(pane ? { pane } : {}) });
-              await runtime.send(
-                conversation.id,
-                text,
-                context,
-                attachments.map((a) => a.id),
-                sceneRef,
-                skills,
-              );
-              editor.reset();
-              return true;
-            } catch (error) {
-              ToastQueue.negative(sendFailureMessage(error), { timeout: 5000 });
-              // 会话已经建好：把整段话（含设置与素材）、图片与点选的 skill 放回那个会话的输入框，不吞掉用户的输入。
-              // 场景模板挂不到会话的输入框上（那里没有模板），这一次的模板随之丢掉。
-              if (conversationId) {
-                useShell.getState().setDraft(conversationId, text);
-                useDraftImages.getState().move(draftKey, conversationId);
-                useDraftSkills.getState().move(draftKey, conversationId);
-                return true;
-              }
-              // 会话没建成：输入框放回原话，模板、设置与素材还留在起始页上。
-              return false;
-            }
-          }}
-        />
-        <ProjectPicker
-          project={project ?? null}
-          projects={pickable}
-          noneDisabled={!!videoProjectId}
-          onSelect={switchProject}
-        />
-        <SlotHint labels={gate === null || gate.ok ? slots : []} onNext={() => setSlotTick((n) => n + 1)} />
-        {guide ? <GateCard guide={guide} /> : null}
-        <HomeStarters target={lastTarget} narrow={narrow} onPick={applyStarter} onBlank={createBlank} />
+            </TabsContent>
+          </Tabs>
+        </div>
+        <HomeStarters target={lastTarget} onPick={applyStarter} />
         <HomeTemplateShelf
           catalog={catalog.templates}
           scene={brief.template}
           shelf={shelf}
-          narrow={narrow}
           onScene={pickScene}
           onExample={(example) => void applyExample(example)}
         />

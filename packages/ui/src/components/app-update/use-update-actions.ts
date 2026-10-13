@@ -41,10 +41,26 @@ export async function stopAllAndInstall(runtime: RuntimeSession): Promise<void> 
   installNow(runtime);
 }
 
-/** 「重启并更新」：有后台任务在跑就打开停止屏障，没有就直接安装。 */
+/**
+ * 「重启并更新」：有后台任务在跑就打开停止屏障，没有就直接安装。
+ *
+ * The update window (a base-ui modal) and the barrier (a Spectrum alert, react-aria focus scope) are two modal systems
+ * that must not stack: base-ui would read a click in the alert as an outside click and both would fight over focus.
+ * So when the request comes from the open window, the window closes first (focus goes back to what opened it) and the
+ * barrier opens on the next task, restoring focus there when it closes.
+ */
 export function requestRestart(runtime: RuntimeSession): void {
-  if (restartAsk(liveBarrierTasks())) useAppUpdate.getState().openBarrier();
-  else installNow(runtime);
+  if (!restartAsk(liveBarrierTasks())) {
+    installNow(runtime);
+    return;
+  }
+  const store = useAppUpdate.getState();
+  if (!store.windowOpen) {
+    store.openBarrier();
+    return;
+  }
+  store.closeWindow();
+  setTimeout(() => useAppUpdate.getState().openBarrier(), 0);
 }
 
 export function useUpdateActions(): (action: UpdateAction) => void {

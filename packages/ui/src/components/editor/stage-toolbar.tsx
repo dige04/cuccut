@@ -1,4 +1,5 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { AssetRecord, Id, Sequence } from '@cuccut/protocol';
 import { ActionButton, DialogTrigger, Picker, PickerItem, Popover, Text, Tooltip, TooltipTrigger } from '@react-spectrum/s2';
 import VolumeOff from '@react-spectrum/s2/icons/VolumeOff';
@@ -16,6 +17,7 @@ import { ColorField, ValueRow } from './inspector-controls.tsx';
 import { SoundSection, SpeedSection } from './inspector-sections.tsx';
 import type { View } from './stage-boxes.tsx';
 import type { FrameRect } from './stage-objects.tsx';
+import { ToolbarRowContext } from './toolbar-row.ts';
 import { OffNote, StageToolbarMenu, TOOL_ICON, itemHost, type ToolHost, type ToolProps } from './stage-toolbar-menu.tsx';
 import { useItemEdit } from './use-item-edit.ts';
 import { EDITOR_COPY as E } from './editor-copy.ts';
@@ -43,6 +45,24 @@ const bar = style({
   transition: 'opacity',
   opacity: { default: 1, isYield: 0 },
   pointerEvents: { default: 'auto', isYield: 'none' },
+});
+/** The same bar docked in the row under the frame: agentcut's clip toolbar, a 20px-radius card capsule. */
+const docked = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '[1px]',
+  maxWidth: 'full',
+  boxSizing: 'border-box',
+  paddingX: '[6px]',
+  paddingY: '[4px]',
+  borderRadius: '[20px]',
+  backgroundColor: 'gray-50',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'gray-200',
+  whiteSpace: 'nowrap',
+  overflowX: 'auto',
+  userSelect: 'none',
 });
 const sep = style({ flexShrink: 0, width: '[1px]', height: '[15px]', marginX: '[3px]', backgroundColor: 'gray-200' });
 const dim = style({ display: 'flex', opacity: 0.4 });
@@ -250,7 +270,20 @@ export function ToolbarBody({ spec, host, render }: { spec: ToolbarSpec; host: T
  * 浮在选中框旁边的那根条子（画面元素与字幕共用）：量自己与舞台，按 `box`（舞台像素的外包盒）落位；
  * `knob` 是选框上方有旋转钮，条子抬高跨过它。拖动中让位（透明、不接指针）。
  */
-export function FloatingBar({ box, knob, yielding, label, children }: { box: Rect; knob: boolean; yielding: boolean; label: string; children: ReactNode }) {
+export function FloatingBar(props: { box: Rect; knob: boolean; yielding: boolean; label: string; children: ReactNode }) {
+  const row = useContext(ToolbarRowContext);
+  // Docked under the frame it covers nothing, so it does not need to give way while something is dragged.
+  if (row)
+    return createPortal(
+      <div role="toolbar" aria-label={props.label} data-stage-editor className={docked}>
+        {props.children}
+      </div>,
+      row,
+    );
+  return <FloatBar {...props} />;
+}
+
+function FloatBar({ box, knob, yielding, label, children }: { box: Rect; knob: boolean; yielding: boolean; label: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ bar: Size; area: Size } | null>(null);
 

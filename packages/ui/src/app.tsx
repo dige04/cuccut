@@ -52,7 +52,8 @@ export function App({ host, initialHref }: { host: HostBridge; initialHref?: str
         <LanguageSync />
         {/* 换语言时整棵界面重画：文案目录在读的时候取当前语言，局部状态随之复位，跨屏状态在 store 里。 */}
         <AppShell key={locale} platform={host.platform} />
-        <ToastContainer placement="bottom" />
+        {/* Toasts sit near the top, under the navigation bar (agentcut sonner; offset in theme/cuccut.css). */}
+        <ToastContainer placement="top" />
       </Provider>
     </RuntimeContext.Provider>
   );

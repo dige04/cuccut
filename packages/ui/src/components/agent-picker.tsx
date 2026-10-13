@@ -1,4 +1,5 @@
 import type { DriverId, DriverInfo } from '@cuccut/protocol';
+import { useRef, useState, type ComponentRef, type CSSProperties } from 'react';
 import { ActionButton, Header, Heading, Menu, MenuItem, MenuSection, MenuTrigger, SubmenuTrigger, Text } from '@react-spectrum/s2';
 import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle';
 import Checkmark from '@react-spectrum/s2/icons/Checkmark';
@@ -18,20 +19,32 @@ import {
   effortRows,
   harnessLabel,
   modelChange,
+  modelLabel,
   modelRows,
   providerRows,
   type AgentChange,
 } from '../model/agent-choice.ts';
 import { useShell } from '../state/shell-store.ts';
 
-/** 弹层宽 320（原型 agent-picker.jsx `ProviderModelPicker`）。 */
+/** 320 wide (agentcut `ProviderModelPicker`). */
 const menu = style({ width: 320, maxWidth: '[calc(100vw - 32px)]' });
-const label = style({ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 });
+/**
+ * The menu opens upward from the composer. Its height is capped at the room between the page's glass header and the
+ * trigger, so it scrolls instead of sliding over the header (never glass on glass). The header (32px window strip plus
+ * the 56px bar and its margins) ends near 88px; keep 16px under it.
+ */
+const HEADER_CLEARANCE = 104;
+const MIN_MENU_HEIGHT = 200;
+function menuCapFor(trigger: Element | null | undefined): CSSProperties | undefined {
+  if (!trigger) return undefined;
+  return { maxHeight: Math.max(MIN_MENU_HEIGHT, trigger.getBoundingClientRect().top - HEADER_CLEARANCE) };
+}
+const label = style({ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 });
 const labelText = style({
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
-  maxWidth: { default: '[220px]', isCompact: '[120px]' },
+  maxWidth: { default: '[180px]', isCompact: '[120px]' },
 });
 /** 第一级当前那一行的勾：图标槽给了 Agent 图标，勾放在名字右边、子菜单箭头前面（原型 ui-spectrum.jsx 同样的放法）。 */
 const rowCheck = style({ display: 'flex', alignItems: 'center', color: 'accent' });
@@ -61,15 +74,33 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
   const current = list.find((d) => d.id === driverId) ?? null;
   const rows = providerRows(list, driverId, model, lockedTo);
   const goSettings = () => go({ tab: 'settings', section: 'agent' });
-  const text = compact ? compactHarnessLabel(current, model) : harnessLabel(current, model);
+  const triggerRef = useRef<ComponentRef<typeof ActionButton>>(null);
+  const [menuCap, setMenuCap] = useState<CSSProperties | undefined>(undefined);
+  // agentcut's picker chip says one thing on two lines: the agent, small, over the model.
+  const over = current ? current.name : AGENT_PICKER.group;
+  const main = !current
+    ? AGENT_PICKER.detecting
+    : compact
+      ? compactHarnessLabel(current, model)
+      : model === null
+        ? AGENT_PICKER.defaultMark
+        : modelLabel(current, model);
 
   return (
-    <MenuTrigger align="end" direction="top">
-      <ActionButton isQuiet size="S" aria-label={S.agentPicker.current(harnessLabel(current, model))}>
+    <MenuTrigger
+      align="end"
+      direction="top"
+      onOpenChange={(isOpen) => {
+        if (isOpen) setMenuCap(menuCapFor(triggerRef.current?.UNSAFE_getDOMNode()));
+      }}>
+      <ActionButton ref={triggerRef} size="S" UNSAFE_className="cc-pick" aria-label={S.agentPicker.current(harnessLabel(current, model))}>
         {current ? <AgentProviderIcon driver={current} /> : null}
         <Text>
           <span className={label}>
-            <span className={labelText({ isCompact: !!compact })}>{text}</span>
+            <span className="cc-pick__lines">
+              {compact ? null : <span className="cc-pick__over">{over}</span>}
+              <span className={`cc-pick__main ${labelText({ isCompact: !!compact })}`}>{main}</span>
+            </span>
             <ChevronDown />
           </span>
         </Text>
@@ -78,6 +109,7 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
         aria-label={S.agentPicker.label}
         size="M"
         styles={menu}
+        UNSAFE_style={menuCap}
         disabledKeys={rows.filter((r) => r.locked).map((r) => `driver:${r.id}`)}
         onAction={(key) => {
           if (key === 'settings' || String(key).startsWith('setup:')) goSettings();
@@ -117,7 +149,7 @@ export function AgentPicker({ drivers, driverId, model, effort, lockedTo, compac
             return (
               <SubmenuTrigger key={row.id}>
                 {item(`driver:${row.id}`)}
-                <ModelMenu driver={driver} model={own.model} effort={own.effort} onChange={onChange} />
+                <ModelMenu driver={driver} model={own.model} effort={own.effort} cap={menuCap} onChange={onChange} />
               </SubmenuTrigger>
             );
           })}
@@ -139,11 +171,13 @@ function ModelMenu({
   driver,
   model,
   effort,
+  cap,
   onChange,
 }: {
   driver: DriverInfo;
   model: string | null;
   effort: string | null;
+  cap: CSSProperties | undefined;
   onChange(change: AgentChange): void;
 }) {
   const active = effectiveModel(driver, model);
@@ -151,7 +185,7 @@ function ModelMenu({
   const currentId = currentEffort(active, effort);
   const currentLabel = currentId ? effortLabel(currentId, active?.efforts.find((e) => e.id === currentId)?.label) : null;
   return (
-    <Menu aria-label={S.agentPicker.models(driver.name)} size="M" styles={menu}>
+    <Menu aria-label={S.agentPicker.models(driver.name)} size="M" styles={menu} UNSAFE_style={cap}>
       <MenuSection
         selectionMode="single"
         disallowEmptySelection

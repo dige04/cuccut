@@ -19,8 +19,6 @@ import { vi } from './stage-bar-copy.vi.ts';
  * 英文写在这里，译文在 `stage-bar-copy.zh-Hans.ts` 等。
  */
 const en = {
-  /** 工具条的读屏名。 */
-  bar: 'Preview controls',
   ratio: 'Aspect ratio',
   ratioReadOnly: 'Aspect ratio · the video is read-only',
   /** 自定义画幅应用之后的提示。 */

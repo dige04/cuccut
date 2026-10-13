@@ -1,4 +1,4 @@
-import { useState, type Key, type ReactNode } from 'react';
+import { useState, type Key } from 'react';
 import { live, type Conversation, type SpaceEntry } from '@cuccut/protocol';
 import {
   ActionButton,
@@ -24,10 +24,8 @@ import OpenIn from '@react-spectrum/s2/icons/OpenIn';
 import PinOff from '@react-spectrum/s2/icons/PinOff';
 import PinOn from '@react-spectrum/s2/icons/PinOn';
 import Play from '@react-spectrum/s2/icons/Play';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { S } from './shell-copy.ts';
 import { untitled } from '../copy.ts';
-import { sessionStatus } from '../model/sidebar.ts';
 import { formatBytes, isPlayable, KIND_LABEL, videoTargetOf } from '../model/space.ts';
 import { useRuntime } from '../runtime/context.tsx';
 import { useConnection } from '../state/connection-store.ts';
@@ -36,60 +34,23 @@ import { useShell } from '../state/shell-store.ts';
 import { useSpace } from '../state/space-store.ts';
 import { NameDialog } from './name-dialog.tsx';
 
-/**
- * 会话头（产品设计 §3.2 用户修订）：一行标题、进行中与等待批准的状态，其余都收进会话菜单；会话摘要在标题栏的按钮里。
- * 它在标题栏里、会话列的上方（原型 home-workspace.css `.tbar__conversation .hhd`）：占满那一段的高度，左右 12，没有分隔线。
- * 功能区收起时它和右侧按钮组读作一组，右边不留白（`end: 'joined'`）；分屏时摘要跟在 ··· 后面，右边留 8（`end: 'summary'`）。
- * 窄窗口里它回到会话面板顶部（产品设计 §3.3），由 HomePage 包一层带分隔线的容器。
- */
-const header = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 4,
-  flexGrow: 1,
-  minWidth: 0,
-  height: 'full',
-  boxSizing: 'border-box',
-  paddingStart: 12,
-  paddingEnd: { default: 12, end: { joined: 0, summary: 8 } },
-});
-const titleStyle = style({
-  flexGrow: 1,
-  minWidth: 0,
-  margin: 0,
-  font: 'ui-sm',
-  fontWeight: 'bold',
-  color: 'gray-900',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-});
-const statusText = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-600' });
-/** 会话进行中 / 等待批准的状态词（按界面语言）；窄窗口的会话标签也用它（workspace-tabs.tsx）。 */
+/** The working / waiting-for-approval word (UI language), shared by the session header and the session tab's hint. */
 export const STATUS_WORD: { readonly running: string; readonly waiting: string } = live(() => ({
   running: S.conversationHeader.running,
   waiting: S.conversationHeader.waiting,
 }));
 
-/** 会话头右端的排法：默认左右 12；`joined` 和右侧按钮组连成一组；`summary` 在 ··· 后面跟着 `trailing`（会话摘要）。 */
-export type ConversationHeaderEnd = 'joined' | 'summary';
-
-export function ConversationHeader({
-  conversation,
-  end,
-  trailing,
-}: {
-  conversation: Conversation;
-  end?: ConversationHeaderEnd;
-  trailing?: ReactNode;
-}) {
+/**
+ * The session's actions menu (⋯ at the right end of the session header): new session, open or create a video in
+ * the session's folder, play its media, pin, rename, show in Space, reveal the folder, and delete. Rename and delete
+ * open their dialogs from here.
+ */
+export function SessionMenu({ conversation }: { conversation: Conversation }) {
   const runtime = useRuntime();
   const project = useProject(conversation.projectId);
   const go = useShell((s) => s.go);
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null);
   const title = conversation.title || untitled();
-  const status = sessionStatus(conversation);
-  const word = status === 'running' || status === 'waiting' ? STATUS_WORD[status] : null;
 
   const onAction = (key: Key) => {
     if (key === 'new') go({ tab: 'home', conversationId: null, projectId: conversation.projectId });
@@ -104,15 +65,7 @@ export function ConversationHeader({
   };
 
   return (
-    <header className={header({ end })} data-workspace-head>
-      <h1 className={titleStyle} title={title}>
-        {title}
-      </h1>
-      {word ? (
-        <span className={statusText} role="status">
-          {word}
-        </span>
-      ) : null}
+    <span className="inline-flex" data-workspace-head>
       <MenuTrigger>
         <ActionButton isQuiet aria-label={S.conversationHeader.actions}>
           <More />
@@ -154,7 +107,6 @@ export function ConversationHeader({
           </MenuSection>
         </Menu>
       </MenuTrigger>
-      {trailing}
       <DialogContainer onDismiss={() => setDialog(null)}>
         {dialog === 'delete' ? (
           <AlertDialog
@@ -187,19 +139,7 @@ export function ConversationHeader({
           }}
         />
       ) : null}
-    </header>
-  );
-}
-
-/** 草稿工作区开了标签时的会话头（原型 shell.jsx：空白草稿开了标签后左侧放「新会话」占位头）：只有标题。 */
-export function DraftConversationHeader({ end }: { end?: ConversationHeaderEnd }) {
-  const title = untitled();
-  return (
-    <header className={header({ end })} data-workspace-head>
-      <h1 className={titleStyle} title={title}>
-        {title}
-      </h1>
-    </header>
+    </span>
   );
 }
 
@@ -216,15 +156,19 @@ function useSourceEntries(conversation: Conversation, accept: (entry: SpaceEntry
     .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
 }
 
-/** 在会话右侧的功能区里打开来源目录里的一个文件，作为一个标签。按条目的来源定位（项目会话按项目），和 Space 里打开的是同一个标签。 */
+/**
+ * Opens a file from the session's source folder as a tab in the session layout's centre. The tab is keyed by the
+ * entry's source (a project session by its project), so it is the same tab Space opens.
+ */
 function usePlayInPane() {
   const openPane = useShell((s) => s.openPane);
   return (entry: SpaceEntry) => openPane({ kind: 'file', target: videoTargetOf(entry) });
 }
 
 /**
- * 打开来源目录里的视频，或新建一个（产品设计 §2.3：从会话可以打开该项目下的视频）。视频在右边的编辑器里打开，会话留在左边。
- * 不属于项目的会话，视频建在它的工作目录里。
+ * Opens a video from the session's source folder, or creates one (product design §2.3: a session can open its
+ * project's videos). The video opens in the editor in the centre of the session layout, with the conversation in the
+ * right column. A session outside any project creates the video in its working directory.
  */
 function VideoSubmenu({ conversation }: { conversation: Conversation }) {
   const runtime = useRuntime();

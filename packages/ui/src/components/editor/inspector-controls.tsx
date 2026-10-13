@@ -53,7 +53,7 @@ const secAction = style({ flexShrink: 0, marginStart: 'auto', paddingStart: 8 })
 const sec = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const prow = style({ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32 });
 const label = style({ flexShrink: 0, width: '[62px]', font: 'ui-sm', color: 'gray-700' });
-/** 数值行（原型 .bc-value-row）：滑杆自带标签与读数，右边一枚精确输入钮；说明另起一行靠右。 */
+/** 数值行（原型 .cc-value-row）：滑杆自带标签与读数，右边一枚精确输入钮；说明另起一行靠右。 */
 const valueRow = style({
   display: 'grid',
   gridTemplateColumns: ['minmax(0, 1fr)', 'auto'],
@@ -267,7 +267,7 @@ export function ValueRow({
         </Popover>
       </DialogTrigger>
       {over || (suffix && !intlUnit) || extra !== undefined ? (
-        <span className={`${valueDetail} bc-tabular`}>
+        <span className={`${valueDetail} cc-tabular`}>
           {detail.filter(Boolean).join(' · ')}
           {extra !== undefined ? (
             <>

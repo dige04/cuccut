@@ -29,8 +29,12 @@ import { takePanelLanding } from './ai-tools-nav.ts';
 import { ShortsChildBanner } from './shorts-banner.tsx';
 import { useShortsLanding } from './shorts-landing.ts';
 import { StageLiveCaptions } from './stage-live.tsx';
-import { Timeline, type TimelineHandle } from './timeline.tsx';
-import { Transport } from './transport.tsx';
+import type { TimelineHandle } from './timeline.tsx';
+import { TimelineCard } from './timeline-card.tsx';
+import { InspectorColumn } from './inspector-column.tsx';
+import { usePaneActive } from './use-pane-active.ts';
+import { useSessionSlotFilled } from '../../cc/components/session-slots.tsx';
+import { VideoSettingsDialog } from './video-settings.tsx';
 import { ShortcutSheet } from './shortcut-sheet.tsx';
 import {
   arrangeSelection,
@@ -49,23 +53,6 @@ import {
 import { EDITOR_COPY as E } from './editor-copy.ts';
 
 const editor = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0, minWidth: 0, outlineStyle: 'none' });
-const body = style({ display: 'flex', flexGrow: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' });
-/** 预览、走带与时间线这一列：放不下时右侧面板先让到最窄（见 side-panel 的 `panel`），这一列再变窄，工具栏始终露着。 */
-const column = style({
-  display: 'flex',
-  flexDirection: 'column',
-  flexGrow: 1,
-  flexShrink: 1,
-  flexBasis: '[320px]',
-  minWidth: 0,
-  minHeight: 0,
-});
-const splitter = style({
-  height: 6,
-  flexShrink: 0,
-  cursor: 'row-resize',
-  backgroundColor: { default: 'gray-100', ':hover': 'gray-200' },
-});
 const centered = style({
   display: 'flex',
   flexDirection: 'column',
@@ -77,7 +64,11 @@ const centered = style({
   color: 'gray-600',
 });
 
-/** 编辑器（产品设计 §5）：视频栏、预览、走带、时间线，右边是面板与竖排工具栏（素材库与属性）。 */
+/**
+ * The video editor (product design §5) in agentcut's layout: the header (in the session's glass header when there is one),
+ * then the panel card on the left, the framed preview with the selection's bar under it and the timeline card in the
+ * centre, and the selection inspector on the right (under the session's chat when there is one).
+ */
 export function VideoEditor() {
   const runtime = useRuntime();
   const video = useVideo((s) => s.video);
@@ -86,6 +77,9 @@ export function VideoEditor() {
   const rootRef = useRef<HTMLDivElement>(null);
   const timeline = useRef<TimelineHandle | null>(null);
   const timelineHeight = useEditor((s) => s.timelineHeight);
+  const active = usePaneActive();
+  // In a session the layout already spaces its columns; elsewhere (Space) the pane keeps its own margin.
+  const inSession = useSessionSlotFilled('header-actions');
   // 属性页拖动中的值只叠给预览与属性页；时间线、快捷键与提交都按视频里的实际值。
   const draft = useEditor((s) => s.draft);
   const shown = useMemo(() => sequence && applyDraft(sequence, draft), [sequence, draft]);
@@ -202,17 +196,17 @@ export function VideoEditor() {
   return (
     <EditorContext.Provider value={actions}>
       <div ref={rootRef} className={editor} tabIndex={-1} data-editor-root>
-        <VideoBar video={video} sequence={sequence} />
+        <VideoBar video={video} sequence={sequence} active={active} />
         {snapshot && video.videoId ? <ShortsChildBanner videoId={video.videoId} documents={snapshot.documents} /> : null}
         {sequence && shown && snapshot ? (
-          <div className={body}>
-            <div className={column}>
+          <div className={`flex min-h-0 min-w-0 flex-1 gap-4 ${inSession ? '' : 'p-3'}`}>
+            <SidePanel sequence={shown} assets={snapshot.assets} documents={snapshot.documents} />
+            <div className="flex min-h-0 min-w-[320px] flex-1 basis-80 flex-col">
               <FontBar videoId={video.videoId} />
               <Preview videoId={video.videoId} sequence={shown} assets={snapshot.assets} documents={snapshot.documents} />
               <StageLiveCaptions videoId={video.videoId} sequence={shown} documents={snapshot.documents} />
-              <Transport sequence={sequence} onZoom={(action) => timeline.current?.zoom(action)} />
               <TimelineSplitter />
-              <Timeline
+              <TimelineCard
                 videoId={video.videoId}
                 sequence={sequence}
                 assets={snapshot.assets}
@@ -221,8 +215,9 @@ export function VideoEditor() {
                 handle={timeline}
               />
             </div>
-            <SidePanel sequence={shown} assets={snapshot.assets} documents={snapshot.documents} />
+            <InspectorColumn sequence={shown} assets={snapshot.assets} documents={snapshot.documents} active={active} />
             {video.videoId ? <SoundtrackBed videoId={video.videoId} sequence={sequence} assets={snapshot.assets} /> : null}
+            <VideoSettingsDialog sequence={shown} assets={snapshot.assets} />
           </div>
         ) : video.status === 'error' ? (
           <div className={centered}>
@@ -258,7 +253,7 @@ function TimelineSplitter() {
   };
   return (
     <div
-      className={splitter}
+      className="group/split relative flex h-3 shrink-0 cursor-row-resize touch-none items-center justify-center"
       role="separator"
       aria-orientation="horizontal"
       aria-label={E.resizeTimeline}
@@ -273,14 +268,15 @@ function TimelineSplitter() {
         else resize(event.clientY);
       }}
       onPointerUp={(event) => {
-        // 松开的位置也要算上：快速拖动时浏览器会合并 pointermove。
+        // Count where it was let go too: fast drags coalesce pointermove events.
         resize(event.clientY);
         start.current = null;
       }}
       onLostPointerCapture={() => {
         start.current = null;
-      }}
-    />
+      }}>
+      <span aria-hidden className="h-1 w-10 rounded-full bg-white/15 opacity-0 transition-opacity duration-150 group-hover/split:opacity-100" />
+    </div>
   );
 }
 
@@ -288,7 +284,8 @@ function TimelineSplitter() {
 function belongsToEditor(event: KeyboardEvent, root: HTMLElement): boolean {
   const target = event.target as HTMLElement | null;
   if (!target) return false;
-  if (target !== document.body && !root.contains(target)) return false;
+  // The header actions and the inspector may be portalled into the session layout; they still belong to the editor.
+  if (target !== document.body && !root.contains(target) && !target.closest('[data-editor-scope]')) return false;
   if (target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]')) return false;
   if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return false;
   // 焦点在按钮上时，空格与回车留给按钮自己。

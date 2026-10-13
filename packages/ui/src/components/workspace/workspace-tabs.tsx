@@ -1,18 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { newId } from '@cuccut/protocol';
-import { ActionButton, Tooltip, TooltipTrigger } from '@react-spectrum/s2';
-import Add from '@react-spectrum/s2/icons/Add';
-import Close from '@react-spectrum/s2/icons/Close';
-import ColorHarmony from '@react-spectrum/s2/icons/ColorHarmony';
-import Comment from '@react-spectrum/s2/icons/Comment';
-import FileText from '@react-spectrum/s2/icons/FileText';
-import Filmstrip from '@react-spectrum/s2/icons/Filmstrip';
-import Folder from '@react-spectrum/s2/icons/Folder';
-import GlobeGrid from '@react-spectrum/s2/icons/GlobeGrid';
-import Layout from '@react-spectrum/s2/icons/Layout';
-import Shapes from '@react-spectrum/s2/icons/Shapes';
-import { iconStyle, style } from '@react-spectrum/s2/style' with { type: 'macro' };
+import { Tooltip, TooltipTrigger } from '@react-spectrum/s2';
+import { Film, FileText, Folder, Globe, LayoutTemplate, MessageSquare, Palette, Plus, Shapes, X } from 'lucide-react';
+import { cn } from 'cn';
 import { Focusable, VisuallyHidden } from 'react-aria-components';
 import { WORKSPACE_COPY } from '../../copy.ts';
 import { TAB_PREVIEW_DELAY_MS, tabPreviewSubtitle } from '../../model/shell-peek.ts';
@@ -34,6 +25,7 @@ import { useShell } from '../../state/shell-store.ts';
 import { useSpace } from '../../state/space-store.ts';
 import { useVideo } from '../../state/video-store.ts';
 import { STATUS_WORD } from '../conversation-header.tsx';
+import { HeaderButton } from '../session/header-button.tsx';
 import { useWorkspaceOverlay } from './workspace-overlay.ts';
 import { WorkspaceTabPreview } from './workspace-tab-preview.tsx';
 
@@ -64,155 +56,63 @@ export function useWorkspaceTitle(): (item: WorkspaceItem) => string {
   };
 }
 
-// Compact workflow canvas; independent of the tab label's font size.
-const icon = { width: 'var(--cc-icon-compact)', height: 'var(--cc-icon-compact)' };
+const icon = 'size-3.5 shrink-0';
 
 export function WorkspaceTabIcon({ item }: { item: WorkspaceItem }) {
-  if (item.kind === 'video') return <Filmstrip UNSAFE_style={icon} />;
-  if (item.kind === 'web') return <GlobeGrid UNSAFE_style={icon} />;
-  if (item.kind === 'files') return <Folder UNSAFE_style={icon} />;
-  if (item.kind === 'slides') return <Layout UNSAFE_style={icon} />;
-  if (item.kind === 'design') return <Shapes UNSAFE_style={icon} />;
-  if (item.kind === 'design-system') return <ColorHarmony UNSAFE_style={icon} />;
-  return <FileText UNSAFE_style={icon} />;
+  if (item.kind === 'video') return <Film aria-hidden className={icon} />;
+  if (item.kind === 'web') return <Globe aria-hidden className={icon} />;
+  if (item.kind === 'files') return <Folder aria-hidden className={icon} />;
+  if (item.kind === 'slides') return <LayoutTemplate aria-hidden className={icon} />;
+  if (item.kind === 'design') return <Shapes aria-hidden className={icon} />;
+  if (item.kind === 'design-system') return <Palette aria-hidden className={icon} />;
+  return <FileText aria-hidden className={icon} />;
 }
 
-const strip = style({ position: 'relative', display: 'flex', alignItems: 'center', gap: 4, flexGrow: 1, minWidth: 0, paddingX: 8, paddingY: '[6px]' });
-/** role=tablist：会话标签（单条标签条）、分隔线与可拖动的滚动列表。 */
-const tablist = style({ display: 'flex', alignItems: 'stretch', gap: 4, flexGrow: 0, flexShrink: 1, minWidth: 0, height: 32 });
-const list = style({
-  display: 'flex',
-  alignItems: 'stretch',
-  gap: 4,
-  flexGrow: 0,
-  flexShrink: 1,
-  minWidth: 0,
-  height: 32,
-  overflowX: 'auto',
-  overflowY: 'hidden',
-  scrollbarWidth: 'none',
-});
-const tabItem = style({
-  position: 'relative',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 4,
-  flexGrow: 1,
-  flexShrink: 1,
-  flexBasis: { default: 160, lg: 240 },
-  minWidth: 120,
-  maxWidth: 240,
-  boxSizing: 'border-box',
-  paddingStart: 8,
-  paddingEnd: 4,
-  borderRadius: 'default',
-  touchAction: 'none',
-  userSelect: 'none',
-  transition: 'default',
-  backgroundColor: { default: 'transparent', isHovered: 'gray-100', isActive: 'gray-25', isDragging: 'gray-100' },
-  color: { default: 'gray-600', isHovered: 'gray-800', isActive: 'gray-900' },
-  outlineStyle: { default: 'none', isActive: 'solid', isDragging: 'dashed' },
-  outlineWidth: { default: 1, isDragging: 2 },
-  outlineColor: { default: 'gray-100', isDragging: 'blue-900' },
-  outlineOffset: { default: -1, isDragging: -2 },
-  opacity: { default: 1, isDragging: 0.35 },
-});
-const tabTarget = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  flexGrow: 1,
-  minWidth: 0,
-  height: 32,
-  borderRadius: 'default',
-  font: 'ui-sm',
-  // `font` 会带上自己的文字颜色；跟着外层标签的灰阶走（原型 `.home-tabs__select { color: inherit }`）。
-  color: '[inherit]',
-  cursor: 'default',
-  outlineStyle: { default: 'none', ':focus-visible': 'solid' },
-  outlineWidth: 2,
-  outlineColor: 'focus-ring',
-  outlineOffset: 2,
-});
-const tabName = style({ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
-/** 关闭钮一直占位，出现时不改变标题的截断；看不见时也点不到。 */
-const closeSlot = style({
-  display: 'flex',
-  flexShrink: 0,
-  opacity: { default: 0, isShown: 1 },
-  pointerEvents: { default: 'none', isShown: 'auto' },
-});
-const closeIcon = iconStyle({ size: 'XS' });
-const shield = style({ position: 'fixed', inset: 0, zIndex: 10000, cursor: 'grabbing', userSelect: 'none' });
-const ghost = style({
-  position: 'absolute',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  height: 32,
-  paddingX: 8,
-  boxSizing: 'border-box',
-  borderRadius: 'default',
-  backgroundColor: 'gray-25',
-  font: 'ui-sm',
-  color: 'gray-900',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: { default: 'blue-900', isOutside: 'gray-500' },
-  boxShadow: 'elevated',
-  opacity: { default: 1, isOutside: 0.6 },
-  pointerEvents: 'none',
-});
-/**
- * 单条标签条的会话标签（原型 home-workspace.css `.home-tabs__conversation`）：淡蓝底常驻，悬停加深，选中加一圈 blue-300；
- * 文字与图标沿用标签的灰阶。没有关闭钮，左右一样留 8。
+/*
+ * The tabs are compact pills inside the session's glass header (agentcut capsules): no glass of their own, only white
+ * fills — a faint one on hover, a brighter one with the control highlight for the tab on screen.
  */
-const conversationItem = style({
-  position: 'relative',
-  display: 'flex',
-  alignItems: 'center',
-  flexGrow: 0,
-  flexShrink: 1,
-  flexBasis: '[180px]',
-  minWidth: 120,
-  maxWidth: '[220px]',
-  boxSizing: 'border-box',
-  paddingX: 8,
-  borderRadius: 'default',
-  userSelect: 'none',
-  transition: 'default',
-  backgroundColor: { default: 'blue-100', isHovered: 'blue-200' },
-  color: { default: 'gray-600', isHovered: 'gray-800', isActive: 'gray-900' },
-  outlineStyle: { default: 'none', isActive: 'solid' },
-  outlineWidth: 1,
-  outlineColor: 'blue-300',
-  outlineOffset: -1,
-});
-const conversationName = style({
-  flexGrow: 1,
-  minWidth: 0,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  fontWeight: 'medium',
-});
-const glyph = style({ position: 'relative', display: 'flex', flexShrink: 0 });
-/** 状态点：进行中蓝、等待批准橙，描一圈标签的底色把它和图标隔开；含义另由提示与读屏名称说出。 */
-const statusDot = style({
-  position: 'absolute',
-  top: '[-2px]',
-  insetEnd: '[-2px]',
-  size: 8,
-  borderRadius: 'full',
-  backgroundColor: { default: 'blue-900', isWaiting: 'orange-900' },
-  outlineStyle: 'solid',
-  outlineWidth: 2,
-  outlineColor: { default: 'blue-100', isHovered: 'blue-200' },
-});
-/** 会话标签与可拖动的标签之间的竖线：上下各留 8。 */
-const separator = style({ flexShrink: 0, alignSelf: 'stretch', width: '[1px]', marginY: 8, marginX: 2, backgroundColor: 'gray-300' });
-/** 让 S2 图标跟着标签的文字颜色（普通 / 悬停 / 当前）。 */
-const inheritIcon = { '--iconPrimary': 'currentColor' } as CSSProperties;
+const strip = 'relative flex min-w-0 flex-1 items-center gap-1';
+/** role=tablist: the session tab (single strip), a separator and the scrolling, draggable list. */
+const tablist = 'cc-no-drag flex h-8 min-w-0 shrink items-center gap-1';
+const list = 'flex h-8 min-w-0 shrink items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]';
+const pill = (active: boolean, hovered: boolean) =>
+  cn(
+    'relative flex h-8 shrink-0 items-center rounded-full text-[13px] select-none transition-[background-color,color,box-shadow,transform] duration-150 motion-reduce:transition-none',
+    active ? 'bg-white/12 text-foreground shadow-(--control-highlight)' : hovered ? 'bg-white/8 text-foreground' : 'bg-white/[0.04] text-muted-foreground',
+  );
+const tabItem = ({ isActive, isHovered, isDragging }: { isActive: boolean; isHovered: boolean; isDragging: boolean }) =>
+  cn(
+    pill(isActive, isHovered || isDragging),
+    'w-44 max-w-44 min-w-24 shrink touch-none gap-0.5 pr-1 pl-3',
+    isDragging && 'opacity-35 outline-2 -outline-offset-2 outline-white/40 outline-dashed',
+  );
+const tabTarget =
+  'flex h-8 min-w-0 flex-1 cursor-default items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0';
+const tabName = 'min-w-0 flex-1 truncate';
+/** The close button always holds its place, so the title does not reflow when it appears; hidden it takes no clicks. */
+const closeSlot = (shown: boolean) => cn('flex shrink-0', shown ? 'opacity-100' : 'pointer-events-none opacity-0');
+const closeButton =
+  'grid size-6 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-white/15 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring';
+const shield = 'fixed inset-0 z-[10000] cursor-grabbing select-none';
+const ghost = (outside: boolean) =>
+  cn(
+    'pointer-events-none absolute flex h-8 items-center gap-2 rounded-full border bg-popover px-3 text-[13px] text-foreground shadow-(--glass-shadow-raised)',
+    outside ? 'border-border opacity-60' : 'border-white/30',
+  );
+/** The session tab in a single strip (narrow window or full view): first, fixed, no close button. */
+const conversationItem = ({ isActive, isHovered }: { isActive: boolean; isHovered: boolean }) =>
+  cn(pill(isActive, isHovered), 'max-w-44 min-w-24 shrink px-3');
+const conversationName = 'min-w-0 flex-1 truncate font-medium';
+const glyph = 'relative flex shrink-0';
+/**
+ * Status dot: working is a soft white, waiting for approval the accent; the meaning is also in the hint and the
+ * accessible name. The ring separates it from the glass behind the pill.
+ */
+const statusDot = (waiting: boolean) =>
+  cn('absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ring-black/40', waiting ? 'bg-accent' : 'bg-foreground/70');
+/** Between the session tab and the draggable tabs. */
+const separator = 'mx-1 h-4 w-px shrink-0 self-center bg-white/15';
 
 interface Drag {
   key: string;
@@ -511,7 +411,7 @@ export function WorkspaceTabs({
   return (
     <div className={strip}>
       <div
-        className={`${tablist} cc-no-drag`}
+        className={tablist}
         role="tablist"
         aria-label={WORKSPACE_COPY.tablist}
         aria-description={WORKSPACE_COPY.tablistHint}
@@ -556,12 +456,9 @@ export function WorkspaceTabs({
           })}
         </div>
       </div>
-      <TooltipTrigger>
-        <ActionButton isQuiet size="S" aria-label={WORKSPACE_COPY.add} onPress={() => openPane({ kind: 'web', id: newId('web'), url: '' })}>
-          <Add />
-        </ActionButton>
-        <Tooltip>{WORKSPACE_COPY.add}</Tooltip>
-      </TooltipTrigger>
+      <HeaderButton label={WORKSPACE_COPY.add} className="cc-no-drag" onClick={() => openPane({ kind: 'web', id: newId('web'), url: '' })}>
+        <Plus className="size-4" />
+      </HeaderButton>
       <VisuallyHidden>
         <span role="status">{announcement}</span>
       </VisuallyHidden>
@@ -583,10 +480,10 @@ export function WorkspaceTabs({
       {preview
         ? createPortal(
             <div className={`${shield} cc-no-drag`} aria-hidden="true">
-              <div className={ghost({ isOutside: !preview.valid })} style={{ left: preview.x, top: preview.y, width: preview.width, ...inheritIcon }}>
+              <div className={ghost(!preview.valid)} style={{ left: preview.x, top: preview.y, width: preview.width }}>
                 <WorkspaceTabIcon item={preview.item} />
                 <span className={tabName}>{title(preview.item)}</span>
-                <Close styles={closeIcon} data-cc-icons="own" />
+                <X aria-hidden className="size-3.5 shrink-0" />
               </div>
             </div>,
             document.body,
@@ -614,7 +511,6 @@ function ConversationTab({
     <div
       role="presentation"
       className={conversationItem({ isActive: info.selected, isHovered: hovered && !info.selected })}
-      style={inheritIcon}
       onPointerEnter={(event) => {
         setHovered(true);
         onHoverStart(event.currentTarget.getBoundingClientRect());
@@ -637,12 +533,13 @@ function ConversationTab({
             className={tabTarget}
             onClick={onSelect}>
             <span className={glyph}>
-              <Comment UNSAFE_style={icon} />
+              <MessageSquare aria-hidden className={icon} />
               {info.status ? (
-                <span className={statusDot({ isWaiting: info.status === 'waiting', isHovered: hovered && !info.selected })} />
+                <span className={statusDot(info.status === 'waiting')} />
               ) : null}
             </span>
-            <span className={conversationName}>{info.title}</span>
+            {/* The header already shows the session's title beside the strip; the pill just names the session view. */}
+            <span className={conversationName}>{WORKSPACE_COPY.conversation}</span>
           </div>
         </Focusable>
         <Tooltip>{WORKSPACE_COPY.conversationTabTip(info.title, word)}</Tooltip>
@@ -690,7 +587,7 @@ function TabItem({
       role="presentation"
       data-workspace-tab={key}
       className={tabItem({ isActive, isHovered: hovered && !isActive, isDragging })}
-      style={{ ...(offset !== null ? { transform: `translateX(${offset}px)` } : {}), ...inheritIcon }}
+      style={offset !== null ? { transform: `translateX(${offset}px)` } : undefined}
       onPointerEnter={(event) => {
         setHovered(true);
         onHoverStart(event.currentTarget.getBoundingClientRect());
@@ -742,10 +639,10 @@ function TabItem({
         </Focusable>
         <Tooltip>{tip}</Tooltip>
       </TooltipTrigger>
-      <span data-tab-close className={closeSlot({ isShown: isActive || hovered || focusWithin })}>
-        <ActionButton size="XS" isQuiet aria-label={WORKSPACE_COPY.close(name)} onPress={onClose}>
-          <Close />
-        </ActionButton>
+      <span data-tab-close className={closeSlot(isActive || hovered || focusWithin)}>
+        <button type="button" className={closeButton} aria-label={WORKSPACE_COPY.close(name)} title={WORKSPACE_COPY.close(name)} onClick={onClose}>
+          <X aria-hidden className="size-3.5" />
+        </button>
       </span>
     </div>
   );

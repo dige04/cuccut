@@ -56,7 +56,6 @@ export const ja: ElementsMessages = {
   tabBrand: 'ブランド',
   tabProps: 'プロパティ',
   currentTool: '現在の編集ツール',
-  videoTools: '動画編集ツール',
   resizePanel: 'パネルの幅を調整',
   added: (label: string, start: string, end: string) => `${label} を追加しました · ${start} → ${end}`,
   undo: '取り消す',

@@ -51,7 +51,7 @@ type Step = StepsBlock['items'][number];
 type ToolCall = Extract<TimelineItem, { kind: 'tool-call' }>;
 type Reasoning = Extract<TimelineItem, { kind: 'reasoning' }>;
 
-const group = style({ display: 'flex', flexDirection: 'column', gap: 4, marginStart: 36 });
+const group = style({ display: 'flex', flexDirection: 'column', alignItems: 'start', gap: 8 });
 const files = style({ display: 'flex', flexWrap: 'wrap', gap: 4, paddingX: 8 });
 const fileLink = style({
   padding: 0,
@@ -130,18 +130,25 @@ export const StepsGroup = memo(function StepsGroup({
     ? items.filter((i): i is ToolCall | Reasoning => (i.kind === 'tool-call' && i.status === 'running') || (i.kind === 'reasoning' && i.streaming))
     : [];
   const current = running.at(-1);
+  const last = current ? null : lastStepText(items, cwd);
   return (
-    <section className={`${group} bc-steps-group`}>
-      <button type="button" className={`bc-work__head${current ? ' is-live' : ''}`} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+    <section className={`${group} cc-steps-group`}>
+      {/* agentcut's collapsed turn: one capsule row — chevron, what happened, and the last step in monospace. */}
+      <button type="button" className={`cc-work__head${current ? ' is-live' : ''}`} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="cc-work__chev" aria-hidden>
+          <ChevronRight />
+        </span>
         {current ? (
           <LiveHead item={current} count={running.length} cwd={cwd} />
         ) : (
-          <span className="bc-work__sum">{[stepsSummary(items, cwd), failed ? T.steps.failed(failed) : null].filter(Boolean).join(' · ')}</span>
+          <>
+            <span className="cc-work__sum">{[stepsSummary(items, cwd), failed ? T.steps.failed(failed) : null].filter(Boolean).join(' · ')}</span>
+            {last && !open ? <span className="cc-work__last">{last}</span> : null}
+          </>
         )}
-        <span className="bc-work__chev">{open ? <ChevronDown /> : <ChevronRight />}</span>
       </button>
       {open ? (
-        <ol className="bc-steps bc-steps--box">
+        <ol className="cc-steps cc-steps--box">
           {items.map((item) => (
             <StepRow key={item.id} item={item} still={!!current} undone={undone} conversationId={conversationId} cwd={cwd} />
           ))}
@@ -151,6 +158,14 @@ export const StepsGroup = memo(function StepsGroup({
   );
 });
 
+/** The last tool step of a finished group, as a terminal would show it (label and its argument). */
+function lastStepText(items: StepsBlock['items'], cwd?: string | null): string | null {
+  const last = items.findLast((item): item is ToolCall => item.kind === 'tool-call');
+  if (!last) return null;
+  const step = toolStep(last, cwd);
+  return [step.label, step.summary].filter(Boolean).join(' ');
+}
+
 /** 在跑的摘要行：那一步的类别名与已用时间（自己每秒跳，组不跟着重渲）。几步一起跑时不写时间，写「等 N 项」。 */
 function LiveHead({ item, count, cwd }: { item: ToolCall | Reasoning; count: number; cwd?: string | null }) {
   const now = useNow(1000);
@@ -158,14 +173,14 @@ function LiveHead({ item, count, cwd }: { item: ToolCall | Reasoning; count: num
   const started = Date.parse(item.createdAt);
   return (
     <>
-      <span className="bc-work__loader">
+      <span className="cc-work__loader">
         <PixelLoader icon={loaderSequence(item.kind === 'tool-call' ? stepLoaderKey(item, cwd) : 'reasoning')} size={14} />
       </span>
-      <span className="bc-work__sum bc-shimmer">{label}</span>
+      <span className="cc-work__sum cc-shimmer">{label}</span>
       {count > 1 ? (
-        <span className="bc-work__meta">{T.steps.more(count)}</span>
+        <span className="cc-work__meta">{T.steps.more(count)}</span>
       ) : Number.isFinite(started) ? (
-        <span className="bc-work__meta">{elapsedLabel(now - started)}</span>
+        <span className="cc-work__meta">{elapsedLabel(now - started)}</span>
       ) : null}
     </>
   );
@@ -180,7 +195,7 @@ function stepLoaderKey(item: ToolCall, cwd?: string | null): string {
 /** 14px 的像素图放进与类别图标同尺寸的画布，换图标时这一行不动。 */
 function RowLoader({ kind }: { kind: string }) {
   return (
-    <span className="bc-step__ic bc-step__loader">
+    <span className="cc-step__ic cc-step__loader">
       <PixelLoader icon={loaderSequence(kind)} size={14} />
     </span>
   );
@@ -216,22 +231,22 @@ function ReasoningRow({ item, still }: { item: Reasoning; still: boolean }) {
   const head = firstLine(item.text);
   const more = item.text.trim() !== head;
   return (
-    <li className="bc-step">
-      <button type="button" className="bc-step__row" aria-expanded={more ? open : undefined} onClick={() => more && setOpen((v) => !v)}>
+    <li className="cc-step">
+      <button type="button" className="cc-step__row" aria-expanded={more ? open : undefined} onClick={() => more && setOpen((v) => !v)}>
         {item.streaming && !still ? (
           <RowLoader kind="reasoning" />
         ) : (
-          <span className="bc-step__ic">
+          <span className="cc-step__ic">
             <Lightbulb />
           </span>
         )}
-        <span className={`bc-step__label${item.streaming ? ' bc-shimmer' : ''}`}>{T.steps.thinking}</span>
-        <span className="bc-step__sum">{head}</span>
-        {more ? <span className="bc-step__chev">{open ? <ChevronDown /> : <ChevronRight />}</span> : null}
+        <span className={`cc-step__label${item.streaming ? ' cc-shimmer' : ''}`}>{T.steps.thinking}</span>
+        <span className="cc-step__sum">{head}</span>
+        {more ? <span className="cc-step__chev">{open ? <ChevronDown /> : <ChevronRight />}</span> : null}
       </button>
       {open ? (
-        <div className="bc-step__detail">
-          <p className="bc-step__reasoning">{item.text.trim()}</p>
+        <div className="cc-step__detail">
+          <p className="cc-step__reasoning">{item.text.trim()}</p>
         </div>
       ) : null}
     </li>
@@ -256,20 +271,20 @@ function ToolRow({ item, still, conversationId, cwd }: { item: ToolCall; still: 
   const icon = failed ? <AlertTriangle /> : status === 'interrupted' ? <Clock /> : step.tool ? TOOL_ICON[step.tool] : KIND_ICON[step.kind];
   const loaderKey = step.tool ?? step.kind;
   return (
-    <li className={`bc-step${failed ? ' is-failed' : ''}`}>
-      <button type="button" className="bc-step__row" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        {running && !still ? <RowLoader kind={loaderKey} /> : <span className="bc-step__ic">{icon}</span>}
-        <span className={`bc-step__label${running ? ' bc-shimmer' : ''}`}>{step.label}</span>
-        <span className="bc-step__sum">{step.summary}</span>
+    <li className={`cc-step${failed ? ' is-failed' : ''}`}>
+      <button type="button" className="cc-step__row" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        {running && !still ? <RowLoader kind={loaderKey} /> : <span className="cc-step__ic">{icon}</span>}
+        <span className={`cc-step__label${running ? ' cc-shimmer' : ''}`}>{step.label}</span>
+        <span className="cc-step__sum">{step.summary}</span>
         {stepMeta(item, status).map((meta) => (
-          <span key={meta.text} className={`bc-step__meta${meta.code ? ' bc-step__meta--code' : ''}`}>
+          <span key={meta.text} className={`cc-step__meta${meta.code ? ' cc-step__meta--code' : ''}`}>
             {meta.text}
           </span>
         ))}
-        <span className="bc-step__chev">{open ? <ChevronDown /> : <ChevronRight />}</span>
+        <span className="cc-step__chev">{open ? <ChevronDown /> : <ChevronRight />}</span>
       </button>
       {open ? (
-        <div className="bc-step__detail">
+        <div className="cc-step__detail">
           {changed.length ? (
             <div className={files}>
               {changed.map((file) => (
@@ -285,7 +300,7 @@ function ToolRow({ item, still, conversationId, cwd }: { item: ToolCall; still: 
           ) : null}
           {item.detail ? <Section title={T.steps.input} text={item.detail} /> : null}
           {failed || status === 'declined' ? (
-            <section className="bc-step__sec bc-step__sec--err">
+            <section className="cc-step__sec cc-step__sec--err">
               <header>{T.steps.error}</header>
               <pre tabIndex={0}>{stepError(item, status)}</pre>
             </section>
@@ -293,13 +308,13 @@ function ToolRow({ item, still, conversationId, cwd }: { item: ToolCall; still: 
           {item.output ? (
             <Section title={T.steps.output} text={item.output} diff={looksLikeDiff(item.output)} />
           ) : running ? (
-            <div className="bc-step__skel" role="status" aria-label={T.steps.waiting}>
+            <div className="cc-step__skel" role="status" aria-label={T.steps.waiting}>
               <span />
               <span />
               <span />
             </div>
           ) : status === 'completed' ? (
-            <p className="bc-step__none">{T.steps.noOutput}</p>
+            <p className="cc-step__none">{T.steps.noOutput}</p>
           ) : null}
         </div>
       ) : null}
@@ -309,7 +324,7 @@ function ToolRow({ item, still, conversationId, cwd }: { item: ToolCall; still: 
 
 function Section({ title, text, diff = false }: { title: string; text: string; diff?: boolean }) {
   return (
-    <section className="bc-step__sec">
+    <section className="cc-step__sec">
       <header>
         <span>{title}</span>
         <CopyButton text={text} />
@@ -317,7 +332,7 @@ function Section({ title, text, diff = false }: { title: string; text: string; d
       {diff ? (
         <pre tabIndex={0}>
           {diffLines(text).map((line, i) => (
-            <span key={i} className={`bc-step__dl bc-step__dl--${line.type}`}>
+            <span key={i} className={`cc-step__dl cc-step__dl--${line.type}`}>
               {line.text || ' '}
               {'\n'}
             </span>

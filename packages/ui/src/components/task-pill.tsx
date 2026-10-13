@@ -23,8 +23,9 @@ const pill = style({
   height: 24,
   paddingEnd: 2,
   borderRadius: 'full',
-  backgroundColor: 'blue-200',
-  color: 'blue-1000',
+  // Neutral capsule (agentcut: a status never wears the accent); the hover card says more.
+  backgroundColor: 'gray-100',
+  color: 'gray-900',
 });
 const focusRing = {
   outlineStyle: { default: 'none', isFocusVisible: 'solid' },
@@ -44,9 +45,9 @@ const go = style({
   borderRadius: 'full',
   font: 'ui-sm',
   fontWeight: 'medium',
-  color: 'blue-1000',
+  color: 'gray-900',
   whiteSpace: 'nowrap',
-  backgroundColor: { default: 'transparent', isHovered: 'blue-300' },
+  backgroundColor: { default: 'transparent', isHovered: 'gray-200' },
   cursor: 'default',
   ...focusRing,
 });
@@ -57,10 +58,10 @@ const more = style({
   height: 16,
   paddingX: '[6px]',
   borderRadius: 'full',
-  backgroundColor: 'blue-900',
+  backgroundColor: 'gray-300',
   // `font` 简写会连带设 `color: 'body'`，写在它后面才不被盖掉。
   font: 'ui-xs',
-  color: 'gray-25',
+  color: 'gray-900',
   fontWeight: 'bold',
 });
 const close = style({
@@ -77,8 +78,8 @@ const close = style({
   overflow: 'hidden',
   opacity: { default: 0, isShown: 1 },
   transition: 'all',
-  color: 'blue-1000',
-  backgroundColor: { default: 'transparent', isHovered: 'blue-300' },
+  color: 'gray-800',
+  backgroundColor: { default: 'transparent', isHovered: 'gray-200' },
   cursor: 'default',
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
   ...focusRing,
@@ -97,7 +98,7 @@ const card = style({
   flexDirection: 'column',
   gap: { default: 4, isMulti: 0 },
   padding: { default: 12, isMulti: '[6px]' },
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
@@ -145,7 +146,7 @@ const row = style({
   margin: 0,
   padding: { default: 0, isMulti: 8 },
   borderWidth: 0,
-  borderRadius: 'default',
+  borderRadius: '[10px]',
   textAlign: 'start',
   color: 'gray-800',
   backgroundColor: { default: 'transparent', isMulti: { isHovered: 'gray-100' } },

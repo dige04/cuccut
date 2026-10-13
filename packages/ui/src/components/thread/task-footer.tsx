@@ -32,9 +32,9 @@ export const TaskFooter = memo(function TaskFooter({
   const task = turn.task;
   const failed = task?.status === 'failed';
   const line = (
-    <div className={`bc-turn${failed ? ' bc-turn--failed' : ''}`}>
+    <div className={`cc-turn${failed ? ' cc-turn--failed' : ''}`}>
       {live ? <LiveClock turn={turn} /> : <DoneClock turn={turn} />}
-      <span className="bc-turn__grow" />
+      <span className="cc-turn__grow" />
       {!live && turn.text ? <CopyButton text={turn.text} label={T.copyReply} showLabel /> : null}
     </div>
   );
@@ -62,8 +62,8 @@ function LiveClock({ turn }: { turn: Turn }) {
   });
   return (
     <>
-      {turn.waiting ? null : <PixelLoader icon={loaderSequence('thinking')} size={14} className="bc-turn__loader" />}
-      <span className={`bc-turn__live${turn.waiting ? '' : ' bc-shimmer'}`}>{label}</span>
+      {turn.waiting ? null : <PixelLoader icon={loaderSequence('thinking')} size={14} className="cc-turn__loader" />}
+      <span className={`cc-turn__live${turn.waiting ? '' : ' cc-shimmer'}`}>{label}</span>
     </>
   );
 }
@@ -78,12 +78,12 @@ function DoneClock({ turn }: { turn: Turn }) {
   if (task.status === 'failed' || endedAt === null) return <span>{label}</span>;
   const at = clockLabel(endedAt);
   return (
-    <span className="bc-turn__time">
-      <span className="bc-turn__sizer" aria-hidden>
+    <span className="cc-turn__time">
+      <span className="cc-turn__sizer" aria-hidden>
         {label.length >= at.length ? label : at}
       </span>
-      <span className="bc-turn__spent">{label}</span>
-      <span className="bc-turn__at" aria-hidden>
+      <span className="cc-turn__spent">{label}</span>
+      <span className="cc-turn__at" aria-hidden>
         {at}
       </span>
     </span>

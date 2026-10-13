@@ -5,7 +5,7 @@ import type { SpaceMessages } from './space-copy.ts';
 const files = (n: number) => pluralForm('pl', n, { one: `${n} plik`, few: `${n} pliki`, many: `${n} plików`, other: `${n} pliku` });
 export const pl: SpaceMessages = {
   searchPlaceholder: "Szukaj nazw, plików i mowy w wideo",
-  searchLabel: "Szukaj w Space",
+  searchLabel: "Szukaj w Bibliotece",
 
   openVideo: "Otwórz wideo",
   viewInfo: "Zobacz informacje",
@@ -126,7 +126,7 @@ export const pl: SpaceMessages = {
 
   trashVideoTitle: "Usunąć wideo?",
   trashVideoBody: "Cały folder wideo trafia do kosza projektu, można przywrócić. Oryginalne powiązane materiały zostają.",
-  trashVideoRelated: (n: number) => `${pluralForm('pl', n, { one: `${n} element`, few: `${n} elementy`, many: `${n} elementów`, other: `${n} elementu` })} wyeksportowane lub wygenerowane z wideo zostaną w Space i nie usuną się z nim:`,
+  trashVideoRelated: (n: number) => `${pluralForm('pl', n, { one: `${n} element`, few: `${n} elementy`, many: `${n} elementów`, other: `${n} elementu` })} wyeksportowane lub wygenerowane z wideo zostaną w Bibliotece i nie usuną się z nim:`,
   trashVideoConfirm: "Usuń wideo",
 
   purgeTitle: "Usunąć trwale?",
@@ -139,7 +139,7 @@ export const pl: SpaceMessages = {
 
   renameTitle: "Zmień nazwę",
   renameLabel: "Nazwa wyświetlana",
-  renameHint: (fileName: string) => `Zmienia tylko nazwę w Space, plik bez zmian. Pozostaw puste dla powrotu do „${fileName}".`,
+  renameHint: (fileName: string) => `Zmienia tylko nazwę w Bibliotece, plik bez zmian. Pozostaw puste dla powrotu do „${fileName}".`,
   save: "Zapisz",
 
   changedDialogTitle: "Wideo źródłowe zmieniło się",
@@ -170,10 +170,10 @@ export const pl: SpaceMessages = {
   openForEdit: "Otwórz do edycji",
   newVideo: "Nowe wideo",
   revealUnavailable: "Plik poza folderem projektu lub sesji, brak lokalizacji do pokazania",
-  sidebarLabel: "Kategorie Space",
+  sidebarLabel: "Kategorie Biblioteki",
   kindsHeader: "Kategorie",
   mineHeader: "Organizuj",
-  sidebarNote: "Space pokazuje wideo, materiały i wyniki wszystkich projektów. Pliki zostają w folderach projektów. Pliki wyeksportowane lub wygenerowane z wideo są zgrupowane razem z nim; przeglądaj według typu, aby zobaczyć je osobno.",
+  sidebarNote: "Biblioteka pokazuje wideo, materiały i wyniki wszystkich projektów. Pliki zostają w folderach projektów. Pliki wyeksportowane lub wygenerowane z wideo są zgrupowane razem z nim; przeglądaj według typu, aby zobaczyć je osobno.",
   all: "Wszystko",
   emptyFiltered: "Brak pasujących elementów",
   emptyTrash: "Kosz pusty",
@@ -192,12 +192,12 @@ export const pl: SpaceMessages = {
   issuesTitle: (n: number) => pluralForm('pl', n, { one: `${n} folder pokazano nie w całości`, few: `${n} foldery pokazano nie w całości`, many: `${n} folderów pokazano nie w całości`, other: `${n} folderu pokazano nie w całości` }),
   issueTruncated: (detail: string) => `Zbyt wiele plików, pokazano część: ${detail}`,
   issueUnreadable: (detail: string) => `Nie można odczytać: ${detail}`,
-  preparing: "Przygotowywanie Space…",
+  preparing: "Przygotowywanie Biblioteki…",
   preparingBody: "Pierwszy raz foldery projektów są skanowane. To chwilę zajmie.",
   createIn: (project: string, hint: string) => `W „${project}" · ${hint}`,
   whichProjectFor: (label: string) => `${label}: który projekt`,
   entryActions: (name: string) => `Działania dla „${name}"`,
-  entriesLabel: "Elementy Space",
+  entriesLabel: "Elementy Biblioteki",
   columnName: "Nazwa",
   columnKind: "Typ",
   columnSource: "Źródło",

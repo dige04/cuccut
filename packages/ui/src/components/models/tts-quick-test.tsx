@@ -63,7 +63,7 @@ const panel = style({
   marginTop: 12,
   marginStart: { default: 0, sm: 32 },
   padding: 16,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',

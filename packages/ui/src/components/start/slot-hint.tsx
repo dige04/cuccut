@@ -8,9 +8,8 @@ const row = style({
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  marginX: 16,
   marginTop: { default: 4, isEmpty: 0 },
-  paddingX: 12,
+  paddingX: 4,
   minWidth: 0,
 });
 const text = style({ minWidth: 0, font: 'ui-sm', color: 'gray-700', lineHeight: '[1.5]' });

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { Id, JobReconcileDecision, JobRecord, TaskSummary } from '@cuccut/protocol';
-import { ActionButton, Button, Heading, IllustratedMessage, ProgressBar, Text, ToastQueue } from '@react-spectrum/s2';
+import { ActionButton, Button, Text, ToastQueue } from '@react-spectrum/s2';
 import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle';
 import ChevronLeft from '@react-spectrum/s2/icons/ChevronLeft';
 import InfoCircle from '@react-spectrum/s2/icons/InfoCircle';
@@ -22,9 +22,9 @@ import { useTasks } from '../../state/tasks-store.ts';
 import { AgentIcon } from '../agent-icon.tsx';
 import { LegacyImportDetail } from '../legacy-import/legacy-import-task.tsx';
 import { useNow } from '../use-now.ts';
-import { UtilityPage } from '../utility-page.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
 import { LinkImportDetail } from './link-import-detail.tsx';
-import { useOpenConversation } from './task-card.tsx';
+import { TaskProgressBar, TaskSourcePill, TaskStatusPill, useOpenConversation } from './task-card.tsx';
 import { TaskFacts, TaskImages, TaskOutputs, TaskSource } from './task-sections.tsx';
 import { TK } from './tasks-copy.ts';
 import { ToolRunPanel } from './tool-run-panel.tsx';
@@ -32,27 +32,26 @@ import { ToolTaskOutputs, ToolTaskRerun } from './tool-task-outputs.tsx';
 import { useTaskRows } from './use-task-rows.ts';
 import { actionTitle, useTaskAction } from './use-task-actions.ts';
 
-const back = style({ alignSelf: 'start', marginBottom: 12 });
-/** 标题下的状态行（原型 `[k.label, t.sub, t.started]`，与标题空 4）。UtilityPage 的标题下留 24，这里收回去。 */
-const statusLine = style({ font: 'ui-sm', color: 'gray-600', marginTop: -20, marginBottom: 0 });
-const progress = style({ maxWidth: 420, marginTop: 16 });
-const phaseLine = style({ font: 'ui-sm', color: 'gray-600', marginTop: '[6px]', marginBottom: 0 });
-const actionRow = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 });
+const back = style({ alignSelf: 'start' });
+const actionRow = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
 const hint = style({ font: 'ui-sm', color: 'gray-600' });
-const note = style({
-  marginTop: 16,
-  padding: 16,
-  borderRadius: 'lg',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: { default: 'gray-200', isError: 'red-300' },
-  backgroundColor: { default: 'gray-50', isError: 'red-100' },
-});
 const noteHead = style({ display: 'flex', alignItems: 'center', gap: 8 });
 const noteIcon = style({ display: 'flex', flexShrink: 0, color: { default: 'gray-700', isError: 'red-900' } });
 const noteTitle = style({ font: 'title-sm', color: { default: 'gray-900', isError: 'negative' }, overflowWrap: 'anywhere', minWidth: 0 });
 const noteBody = style({ font: 'ui-sm', color: 'gray-600', marginTop: '[6px]' });
 const noteActions = style({ display: 'flex', gap: 8, marginTop: 12 });
+
+/**
+ * A solid panel in the page column (agentcut `Panel`); errors get a red hairline and a faint red wash. It holds Spectrum
+ * buttons, so it is not `data-cc`: the box model and its paragraphs' margins are set here instead of by the preflight.
+ */
+function Panel({ error = false, children }: { error?: boolean; children: ReactNode }) {
+  return (
+    <div className={`box-border flex flex-col gap-3 rounded-3xl px-5 py-4 ring-1 [&>p]:m-0 ${error ? 'bg-destructive/8 ring-destructive/30' : 'bg-card ring-foreground/10'}`}>
+      {children}
+    </div>
+  );
+}
 
 /** 任务详情（原型 page-tasks.jsx `TaskDetailPage`）：Agent 任务与 Job 共用一页，按 ID 先找任务再找 Job。 */
 export function TaskDetail({ taskId }: { taskId: Id }) {
@@ -70,13 +69,13 @@ export function TaskDetail({ taskId }: { taskId: Id }) {
   );
   if (!row) {
     return (
-      <UtilityPage kind="tasks" before={backButton} title={ready ? TASK_VIEW_COPY.notFound : undefined}>
+      <UtilityShell kind="tasks" before={backButton} title={ready ? TASK_VIEW_COPY.notFound : undefined}>
         {ready ? (
-          <IllustratedMessage size="S">
-            <Heading>{TASK_VIEW_COPY.notFoundBody}</Heading>
-          </IllustratedMessage>
+          <Panel>
+            <p className="text-sm text-muted-foreground">{TASK_VIEW_COPY.notFoundBody}</p>
+          </Panel>
         ) : null}
-      </UtilityPage>
+      </UtilityShell>
     );
   }
   // 导入旧版项目有自己的一页（计数、没导入的原因与补救、已导入 / 已跳过）。
@@ -103,40 +102,44 @@ function TaskDetailBody({ row, job, task, backButton }: { row: TaskRow; job?: Jo
     row.action?.type === 'stop' ? TASK_VIEW_COPY.stopHint : row.kind === 'export' ? TASK_VIEW_COPY.cancelExportHint : null;
 
   return (
-    <UtilityPage kind="tasks" before={backButton} title={row.title}>
-      <p className={statusLine}>{[row.kindText, row.where, agoLabel(row.startedAt, now)].filter(Boolean).join(' · ')}</p>
-      {row.live && !row.queued && row.progress !== null ? (
-        <div className={progress}>
-          <ProgressBar
-            size="S"
-            aria-label={TK.progress(row.title, row.label)}
-            isIndeterminate={row.progress === 'indet'}
-            value={row.progress === 'indet' ? undefined : row.progress}
-          />
-        </div>
+    <UtilityShell
+      kind="tasks"
+      before={backButton}
+      title={row.title}
+      blurb={[row.kindText, row.where, agoLabel(row.startedAt, now)].filter(Boolean).join(' · ')}
+      actions={
+        <span data-cc className="flex items-center gap-2">
+          <TaskStatusPill row={row} />
+          <TaskSourcePill chip={row.chip} />
+        </span>
+      }>
+      {(row.live && !row.queued && row.progress !== null) || (row.live && row.phase) || row.action || openConversation ? (
+        <Panel>
+          {row.live && !row.queued && row.progress !== null ? <TaskProgressBar row={row} className="max-w-xl" /> : null}
+          {row.live && row.phase ? <p className="text-sm text-muted-foreground">{[row.phase, ...speed].join(' · ')}</p> : null}
+          {row.action ? (
+            <div className={actionRow}>
+              <Button variant="negative" fillStyle="outline" size="M" onPress={() => act(row.action!)}>
+                {actionTitle(row.action, row.kind)}
+              </Button>
+              {actionHint ? <span className={hint}>{actionHint}</span> : null}
+            </div>
+          ) : null}
+          {openConversation ? (
+            <div className={actionRow}>
+              <Button variant="secondary" size="S" onPress={openConversation}>
+                <AgentIcon />
+                <Text>{TASK_VIEW_COPY.openConversation}</Text>
+              </Button>
+              <span className={hint}>{row.origin === 'job' ? TASK_VIEW_COPY.conversationHint : TASK_VIEW_COPY.agentTaskHint}</span>
+            </div>
+          ) : null}
+        </Panel>
       ) : null}
-      {row.live && row.phase ? <p className={phaseLine}>{[row.phase, ...speed].join(' · ')}</p> : null}
       {job && toolRun ? <ToolRunPanel job={job} tool={toolRun} /> : null}
-      {row.action ? (
-        <div className={actionRow}>
-          <Button variant="negative" fillStyle="outline" size="M" onPress={() => act(row.action!)}>
-            {actionTitle(row.action, row.kind)}
-          </Button>
-          {actionHint ? <span className={hint}>{actionHint}</span> : null}
-        </div>
-      ) : null}
-      {openConversation ? (
-        <div className={actionRow}>
-          <Button variant="secondary" size="S" onPress={openConversation}>
-            <AgentIcon />
-            <Text>{TASK_VIEW_COPY.openConversation}</Text>
-          </Button>
-          <span className={hint}>{row.origin === 'job' ? TASK_VIEW_COPY.conversationHint : TASK_VIEW_COPY.agentTaskHint}</span>
-        </div>
-      ) : null}
 
       {job?.state === 'cancelled' || job?.state === 'interrupted' || job?.state === 'needs-reconciliation' ? (
-        <div className={note({})}>
+        <Panel>
           <div className={noteHead}>
             <span className={noteIcon({})}>
               <InfoCircle />
@@ -150,10 +153,10 @@ function TaskDetailBody({ row, job, task, backButton }: { row: TaskRow; job?: Jo
                 ? TASK_VIEW_COPY.interruptedBody
                 : TASK_VIEW_COPY.needsReconciliationBody}
           </div>
-        </div>
+        </Panel>
       ) : null}
       {failed && row.error && !toolRun && !refill ? (
-        <div className={note({ isError: true })}>
+        <Panel error>
           <div className={noteHead}>
             <span className={noteIcon({ isError: true })}>
               <AlertTriangle />
@@ -170,7 +173,7 @@ function TaskDetailBody({ row, job, task, backButton }: { row: TaskRow; job?: Jo
               </div>
             </>
           ) : null}
-        </div>
+        </Panel>
       ) : null}
       {job && refill ? <ToolTaskRerun job={job} rerun={refill} error={failed ? row.error : null} remedy={failed ? remedy : null} /> : null}
       {job ? <ReconcileActions job={job} /> : null}
@@ -183,7 +186,7 @@ function TaskDetailBody({ row, job, task, backButton }: { row: TaskRow; job?: Jo
       ) : job ? (
         <TaskOutputs job={job} />
       ) : null}
-    </UtilityPage>
+    </UtilityShell>
   );
 }
 
@@ -213,7 +216,7 @@ function ReconcileActions({ job }: { job: JobRecord }) {
         ? TASK_VIEW_COPY.reconcileDiscardHint
         : TASK_VIEW_COPY.reconcileApplyHint;
   return (
-    <>
+    <Panel>
       {options.map((decision) => (
         <div key={decision} className={actionRow}>
           <Button variant="secondary" size="S" isPending={busy} onPress={() => decide(decision)}>
@@ -222,6 +225,6 @@ function ReconcileActions({ job }: { job: JobRecord }) {
           <span className={hint}>{hintOf(decision)}</span>
         </div>
       ))}
-    </>
+    </Panel>
   );
 }

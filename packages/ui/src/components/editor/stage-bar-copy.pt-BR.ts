@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const ptBR: StageBarMessages = {
-  bar: 'Controles da prévia',
   ratio: 'Proporção',
   ratioReadOnly: 'Proporção · o vídeo é somente leitura',
   ratioApplied: (ratio: string) => `Proporção alterada para ${ratio}`,

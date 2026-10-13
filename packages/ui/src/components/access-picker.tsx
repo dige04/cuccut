@@ -23,7 +23,7 @@ export const MODE_ICON: Record<AgentMode, ComponentType> = {
 /** 菜单宽 288，说明整段折行（原型 agent-thread.jsx `AccessPicker`）。 */
 const menu = style({ width: 288, maxWidth: '[calc(100vw - 32px)]' });
 /** 箭头放在文字后面：放进 Text 里，不占 ActionButton 前面的图标位。 */
-const label = style({ display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' });
+const label = style({ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' });
 
 /**
  * 访问模式（架构设计 §3.12，原型 agent-thread.jsx `AccessPicker`）：四档永远全部可选，切档不弹确认框。
@@ -35,11 +35,17 @@ export function AccessPicker({ value, compact, onChange }: { value: AgentMode; c
   const Icon = MODE_ICON[value];
   const modes: readonly AgentMode[] = value === 'plan' ? ['plan', ...ACCESS_MODES] : ACCESS_MODES;
   const button = (
-    <ActionButton isQuiet size="S" aria-label={S.accessPicker.current(ACCESS_MODE_LABEL[value])}>
+    <ActionButton size="S" UNSAFE_className="cc-pick" aria-label={S.accessPicker.current(ACCESS_MODE_LABEL[value])}>
       <Icon />
       <Text>
         <span className={label}>
-          {compact ? null : ACCESS_MODE_LABEL[value]}
+          {compact ? null : (
+            // Two lines like the agent chip beside it: what this is, small, over the current mode.
+            <span className="cc-pick__lines">
+              <span className="cc-pick__over">{S.accessPicker.label}</span>
+              <span className="cc-pick__main">{ACCESS_MODE_LABEL[value]}</span>
+            </span>
+          )}
           <ChevronDown />
         </span>
       </Text>

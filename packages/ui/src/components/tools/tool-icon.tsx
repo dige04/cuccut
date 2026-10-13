@@ -1,4 +1,5 @@
 import type { ComponentProps, ComponentType } from 'react';
+import { AudioLines, Captions, Download as DownloadLine, Film, Image as ImageLine, Languages, Layers as LayersLine, Mic, Music, Type, type LucideIcon } from 'lucide-react';
 import AudioWave from '@react-spectrum/s2/icons/AudioWave';
 import Filmstrip from '@react-spectrum/s2/icons/Filmstrip';
 import ImageIcon from '@react-spectrum/s2/icons/Image';
@@ -25,4 +26,18 @@ export const TOOL_ICON: Record<ToolIcon, IconComponent> = {
   text: TextIcon,
   film: Filmstrip,
   layers: Layers,
+};
+
+/** The same catalog icons in lucide, for the page chrome (the Tools rail and gallery cards). */
+export const TOOL_RAIL_ICON: Record<ToolIcon, LucideIcon> = {
+  transcript: Captions,
+  translate: Languages,
+  microphone: Mic,
+  import: DownloadLine,
+  wave: AudioLines,
+  image: ImageLine,
+  music: Music,
+  text: Type,
+  film: Film,
+  layers: LayersLine,
 };

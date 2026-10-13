@@ -26,8 +26,8 @@ const en = {
   noun: 'music model',
   manage: 'Manage music models…',
   soundtrackTitle: (name: string) => `Soundtrack for “${name}”`,
-  soundtrackBody: (seconds: number) => `The length is prefilled from this video: ${seconds} s. When it’s done it goes onto the video’s music track, and it stays in Space too.`,
-  soundtrackLoopBody: (videoSec: number, max: number) => `This video is ${videoSec} s, longer than the ${max} s a single clip can be: a ${max} s clip is generated and looped to fill the video, fading out at the end. It stays in Space too.`,
+  soundtrackBody: (seconds: number) => `The length is prefilled from this video: ${seconds} s. When it’s done it goes onto the video’s music track, and it stays in the Library too.`,
+  soundtrackLoopBody: (videoSec: number, max: number) => `This video is ${videoSec} s, longer than the ${max} s a single clip can be: a ${max} s clip is generated and looped to fill the video, fading out at the end. It stays in the Library too.`,
   soundtrackOff: 'Only generate, don’t add to the video',
   mode: 'Form',
   style: 'Style',
@@ -48,7 +48,7 @@ const en = {
   seedPlaceholder: 'Blank = random',
   seedNote: 'The same seed and settings make the same clip on the same computer; leave it blank for variety.',
   saveNote:
-    'Each clip is a WAV in the save location and an audio item in Space, with a JSON file beside it recording the model, style, lyrics and seed; duplicate names get a number.',
+    'Each clip is a WAV in the save location and an audio item in the Library, with a JSON file beside it recording the model, style, lyrics and seed; duplicate names get a number.',
   downloadBody: 'Downloading doesn’t use the task queue; once installed, this page’s main button works.',
   downloadBodyPaused:
     'Downloading doesn’t use the task queue; once installed, this page’s main button works. The download stopped partway; resuming continues from there.',
@@ -57,7 +57,7 @@ const en = {
   emptyBody:
     'Write a style, choose a model and select Generate music. A 30-second clip takes a few minutes on this computer, so you can do something else meanwhile.',
   sideFoot:
-    'Generated WAVs are saved in the save location and appear under Audio in Space. Everything runs on this computer, offline. YuE2 weights are for non-commercial use only.',
+    'Generated WAVs are saved in the save location and appear under Audio in the Library. Everything runs on this computer, offline. YuE2 weights are for non-commercial use only.',
   copyStyle: 'Copy style description',
   running: (phase: string, eta: string) => `${phase} · ${eta}`,
   truncated: (limit: number) =>

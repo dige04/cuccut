@@ -279,7 +279,7 @@ function SkillInfo({
         ) : detail.state === 'failed' ? (
           <p className={quiet}>{SKILL_DETAIL_COPY.loadFailed(detail.message)}</p>
         ) : text.trim() ? (
-          <div className={`${markdown} bc-md`}>
+          <div className={`${markdown} cc-md`}>
             <Markdown remarkPlugins={remarkPlugins}>{text}</Markdown>
           </div>
         ) : (

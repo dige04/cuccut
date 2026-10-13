@@ -4,7 +4,7 @@ import ChevronLeft from '@react-spectrum/s2/icons/ChevronLeft';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { TextArea as RacTextArea, TextField as RacTextField } from 'react-aria-components';
 import { useShell } from '../../state/shell-store.ts';
-import { UtilityPage } from '../utility-page.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
 import { PAGE_COPY } from './tools-copy.ts';
 
 /*
@@ -12,15 +12,15 @@ import { PAGE_COPY } from './tools-copy.ts';
  * 子页顶上「← 工具」，标题右边是那行现状、⌘↵ 与主按钮（设计稿放在吸顶的导航栏里，这里放在页头）。
  */
 
-const back = style({ alignSelf: 'start', marginBottom: 12, marginStart: -8 });
-const actions = style({ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flexShrink: 1 });
-const chipRow = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: -12, marginBottom: 24 });
+const back = style({ alignSelf: 'start' });
+const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, minWidth: 0, flexShrink: 1 });
+const chipRow = style({ display: 'flex', flexWrap: 'wrap', gap: 8 });
 
 /** 工具子页：返回总览、标题、页头右边一组控件、标题下一枚「走谁的服务」的标签。 */
 export function ToolPage({ title, bar, chip, children }: { title: string; bar?: ReactNode; chip?: ReactNode; children: ReactNode }) {
   const go = useShell((s) => s.go);
   return (
-    <UtilityPage
+    <UtilityShell
       kind="tools"
       title={title}
       actions={bar ? <div className={actions}>{bar}</div> : undefined}
@@ -32,18 +32,18 @@ export function ToolPage({ title, bar, chip, children }: { title: string; bar?: 
       }>
       {chip ? <div className={chipRow}>{chip}</div> : null}
       {children}
-    </UtilityPage>
+    </UtilityShell>
   );
 }
 
+// A reason may be a sentence: up to two lines beside the button, then the full text is in the tooltip.
 const statusText = style({
   font: 'ui-sm',
   color: { default: 'gray-700', isBad: 'orange-1000' },
   minWidth: 0,
   maxWidth: '[360px]',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
+  lineClamp: 2,
+  overflowWrap: 'anywhere',
 });
 const hotkey = style({ font: 'code-xs', color: 'gray-600', flexShrink: 0 });
 
@@ -119,8 +119,9 @@ const section = style({
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
-  padding: 16,
-  borderRadius: 'lg',
+  paddingX: 20,
+  paddingY: 16,
+  borderRadius: '[24px]',
   backgroundColor: 'gray-50',
   borderWidth: 1,
   borderStyle: 'solid',
@@ -129,7 +130,7 @@ const section = style({
 });
 const sectionHead = style({ display: 'flex', alignItems: 'center', gap: 8, minHeight: 24 });
 const grow = style({ flexGrow: 1 });
-const sectionTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
+const sectionTitle = style({ flexGrow: 1, margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 
 /** 表单的一节（`.ttsw__sec`）：小标题、右边的链接，下面是内容。 */
 export function Section({ title, aside, children, label }: { title?: string; aside?: ReactNode; children: ReactNode; label?: string }) {
@@ -227,11 +228,10 @@ const textBox = style({
   paddingY: 8,
   font: 'body-sm',
   color: 'gray-900',
-  backgroundColor: 'gray-25',
-  borderWidth: 2,
+  borderWidth: 1,
   borderStyle: 'solid',
-  borderRadius: 'lg',
-  borderColor: { default: 'gray-300', isHovered: 'gray-400', isFocused: 'gray-900' },
+  borderRadius: '[12px]',
+  borderColor: { default: 'gray-300', isHovered: 'gray-400', isFocused: 'gray-600' },
   outlineStyle: { default: 'none', isFocusVisible: 'solid' },
   outlineColor: 'focus-ring',
   outlineWidth: 2,
@@ -264,7 +264,8 @@ export function ToolTextArea({
       <RacTextArea
         ref={inputRef}
         placeholder={placeholder}
-        className={(rp) => textBox({ ...rp, isCompact: compact })}
+        // Recessed field (agentcut `--field-shadow`): a darker well rather than a lighter box.
+        className={(rp) => `${textBox({ ...rp, isCompact: compact })} bg-black/15 shadow-(--field-shadow)`}
         style={{ resize: 'vertical' }}
       />
     </RacTextField>
@@ -288,16 +289,16 @@ const record = style({
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
-  padding: 12,
-  borderRadius: 'lg',
+  padding: 16,
+  borderRadius: '[20px]',
   backgroundColor: 'gray-50',
   borderWidth: 1,
   borderStyle: 'solid',
-  borderColor: { default: 'gray-200', isRunning: 'blue-700', isFailed: 'orange-400' },
+  borderColor: { default: 'gray-200', isRunning: 'gray-500', isFailed: 'orange-400' },
   minWidth: 0,
 });
 
-/** 右栏的一张记录卡（`.ttsrec`）：在跑时描一圈蓝。 */
+/** One record card in the side column (`.ttsrec`); a running one gets a neutral ring (status never wears the accent). */
 export function RecordCard({ running, failed, label, children }: { running?: boolean; failed?: boolean; label: string; children: ReactNode }) {
   return (
     <article className={record({ isRunning: !!running, isFailed: !!failed })} aria-label={label}>
@@ -307,7 +308,7 @@ export function RecordCard({ running, failed, label, children }: { running?: boo
 }
 
 export const recordHead = style({ display: 'flex', alignItems: 'center', gap: 8, minHeight: 24, minWidth: 0 });
-export const recordIcon = style({ display: 'flex', flexShrink: 0, color: 'blue-900', '--iconPrimary': { type: 'fill', value: 'currentColor' } });
+export const recordIcon = style({ display: 'flex', flexShrink: 0, color: 'gray-800', '--iconPrimary': { type: 'fill', value: 'currentColor' } });
 export const recordTitle = style({
   flexGrow: 1,
   minWidth: 0,

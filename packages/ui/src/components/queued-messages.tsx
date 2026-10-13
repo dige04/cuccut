@@ -14,18 +14,8 @@ import { useSkills } from '../state/skills-store.ts';
 
 const EMPTY: QueuedMessage[] = [];
 
-const box = style({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-  marginBottom: 8,
-  padding: 8,
-  borderRadius: 'lg',
-  backgroundColor: 'gray-50',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-});
+/** A thin fill over the composer's surface (agentcut: fills, not another card), concentric with its 24px corner. */
+const box = 'mb-2 flex flex-col gap-1 rounded-2xl border border-white/10 bg-white/5 p-2';
 const head = style({ font: 'ui-xs', color: 'gray-600', paddingX: 4 });
 const list = style({ display: 'flex', flexDirection: 'column', gap: 4, margin: 0, padding: 0, listStyleType: 'none' });
 const row = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, minWidth: 0 });

@@ -56,7 +56,6 @@ export const nl: ElementsMessages = {
   tabBrand: "Merk",
   tabProps: "Eigenschappen",
   currentTool: "Huidige bewerkingstool",
-  videoTools: "Videobewerkingstools",
   resizePanel: "Paneelgrootte wijzigen",
   added: (label: string, start: string, end: string) => `Toegevoegd: ${label} · ${start} → ${end}`,
   undo: "Ongedaan maken",

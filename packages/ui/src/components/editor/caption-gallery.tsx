@@ -271,7 +271,6 @@ export function CaptionGallery({
     useEditor.getState().select([itemId]);
     if (!onCard(preset) && !(await pick(preset))) return;
     openGallery(videoId, false);
-    useEditor.getState().showPanel('props');
   };
 
   return (

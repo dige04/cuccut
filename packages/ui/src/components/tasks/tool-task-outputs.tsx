@@ -17,13 +17,11 @@ import { goRerun } from '../tools/video-tool-parts.tsx';
  * 「重试」回到参数已经填好的工具页（直接任务没有就地重试的方法）。
  */
 
-const box = style({ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 });
+const box = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const errorRow = style({ display: 'flex', alignItems: 'start', gap: 8, font: 'ui', color: 'negative', overflowWrap: 'anywhere' });
 const errorIcon = style({ display: 'flex', flexShrink: 0, marginTop: 2, color: 'red-900', '--iconPrimary': { type: 'fill', value: 'currentColor' } });
 const hint = style({ font: 'ui-sm', color: 'gray-600' });
 const actions = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
-// ToolOutputs 自带「产物 · 保存在…」标题，这里只留出与上一段的间距。
-const outputs = style({ marginTop: 28 });
 
 /** 「重试 / 再做一次」：失败时原因写在上面，配置问题另给去处。 */
 export function ToolTaskRerun({ job, rerun, error, remedy }: { job: JobRecord; rerun: Rerun; error: string | null; remedy: Remedy | null }) {
@@ -58,8 +56,7 @@ export function ToolTaskOutputs({ job, fallback }: { job: JobRecord; fallback: R
   const entries = useJobOutputs([job.jobId]);
   if (!entries.length) return <>{fallback}</>;
   return (
-    <div className={outputs}>
-      <ToolOutputs entries={entries} saveDir={outputsDir(entries)} />
-    </div>
+    // ToolOutputs brings its own "Outputs · saved in…" heading; the page column spaces it like the other sections.
+    <ToolOutputs entries={entries} saveDir={outputsDir(entries)} panel />
   );
 }

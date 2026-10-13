@@ -14,10 +14,10 @@ import { DEFAULT_CAPTION_STYLE } from './property-values.ts';
  * 按视频里的文档画）。ID 都是界面自己起的，不会与 Runtime 发的 ID 撞上。
  */
 
-export const LIVE_CAPTION_TRACK_ID = 'bc-live-caption-track';
-export const LIVE_CAPTION_ITEM_ID = 'bc-live-caption';
-export const LIVE_CAPTION_DOCUMENT_ID = 'bc-live-caption-document';
-export const LIVE_CAPTION_STYLE_ID = 'bc-live-caption-style';
+export const LIVE_CAPTION_TRACK_ID = 'cc-live-caption-track';
+export const LIVE_CAPTION_ITEM_ID = 'cc-live-caption';
+export const LIVE_CAPTION_DOCUMENT_ID = 'cc-live-caption-document';
+export const LIVE_CAPTION_STYLE_ID = 'cc-live-caption-style';
 
 /** 画面上的一句（序列秒）。 */
 export interface LiveCue {

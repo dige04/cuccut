@@ -257,7 +257,7 @@ export function BrandPanel({
           <Text>{IB.import}</Text>
         </Button>
       </PanelHead>
-      <div className={`${panelBody} bc-scroll`}>
+      <div className={`${panelBody} cc-scroll`}>
         {!pickFiles ? <Note>{IB.noFilePicker}</Note> : null}
         {!ready ? (
           <div className={loading}>

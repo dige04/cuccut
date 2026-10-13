@@ -130,7 +130,7 @@ export function LiveTranscript({ jobId, sequence, assets }: { jobId: Id; sequenc
         heading={C.liveSaving}
       />
       <div className={frame}>
-        <div ref={bodyRef} className={`${body} bc-scroll`} onScroll={onScroll} aria-label={C.title} aria-live="polite">
+        <div ref={bodyRef} className={`${body} cc-scroll`} onScroll={onScroll} aria-label={C.title} aria-live="polite">
           {segments.length ? (
             <div className={list}>
               {segments.map((segment, index) => {
@@ -140,11 +140,11 @@ export function LiveTranscript({ jobId, sequence, assets }: { jobId: Id; sequenc
                   <div key={index} className={row({ isPlaced: at !== undefined })} onClick={at === undefined ? undefined : () => seek(at)}>
                     <div className={rowHead}>
                       {tail ? <span className={unknown}>{C.liveSpeaker}</span> : null}
-                      <span className={`${time} bc-tabular`}>{formatClock(segment.start)}</span>
+                      <span className={`${time} cc-tabular`}>{formatClock(segment.start)}</span>
                     </div>
                     <div className={text({ isTail: tail })}>
                       {segment.text.trim()}
-                      {tail ? <span className={`${caret} bc-live-caret`} /> : null}
+                      {tail ? <span className={`${caret} cc-live-caret`} /> : null}
                     </div>
                   </div>
                 );

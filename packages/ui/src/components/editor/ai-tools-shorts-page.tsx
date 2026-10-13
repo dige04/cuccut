@@ -85,7 +85,7 @@ export function ShortsToolPage({
   return (
     <>
       <PanelHead title={info.name} back={{ label: C.back, onPress: onBack }} />
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <ToolCard name={info.name} lines={info.setup ?? [info.desc]} effect={toolEffect('shortscut')} />
 
         <div className={rows}>

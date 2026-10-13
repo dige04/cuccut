@@ -145,7 +145,7 @@ export function TranslationStatbar(p: StatbarProps) {
           </span>
         ) : (
           <>
-            <span className="bc-tabular">{C.stats(stats.sentences)}</span>
+            <span className="cc-tabular">{C.stats(stats.sentences)}</span>
             {stats.untranslated ? (
               <span className={warn} title={C.untranslated(stats.untranslated)}>
                 {C.untranslatedShort(stats.untranslated)}

@@ -42,6 +42,12 @@ if (values.build && values.dist) {
 } else if (values.build) execFileSync('npm', ['run', 'build:web'], { cwd: repo, stdio: 'inherit' });
 mkdirSync(values.out, { recursive: true });
 mkdirSync(env.CUCCUT_HOME, { recursive: true });
+// A runtime already running for this home keeps serving the web client it started with: restart it so --dist applies.
+if (values.dist) {
+  try {
+    cli('runtime', 'stop', '--json');
+  } catch {}
+}
 cli('runtime', 'ensure', '--json');
 try {
   cli('services', 'configure', 'web', '--port', values.port, '--json');

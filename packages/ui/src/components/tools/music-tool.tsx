@@ -83,7 +83,7 @@ const card = style({
   alignItems: 'start',
   gap: 4,
   padding: 12,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'informative-700',

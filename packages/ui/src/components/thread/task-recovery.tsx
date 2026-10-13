@@ -18,9 +18,8 @@ const box = style({
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
-  marginStart: 36,
-  padding: 12,
-  borderRadius: 'lg',
+  padding: 16,
+  borderRadius: '[20px]',
   backgroundColor: 'gray-50',
   borderWidth: 1,
   borderStyle: 'solid',
@@ -31,7 +30,7 @@ const box = style({
 const title = style({ font: 'title-sm', margin: 0 });
 const body = style({ margin: 0, color: 'gray-700' });
 const acts = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 });
-const retryRow = style({ display: 'flex', marginStart: 36 });
+const retryRow = style({ display: 'flex' });
 const menu = style({ width: 320, maxWidth: '[calc(100vw - 32px)]' });
 
 /**

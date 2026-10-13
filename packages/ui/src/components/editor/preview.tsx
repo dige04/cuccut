@@ -1,74 +1,122 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
-import { itemRangeSeconds, sequenceDisplayName, type AssetRecord, type AudioItem, type DocumentRecord, type Id, type Sequence, type VersionRef } from '@cuccut/protocol';
-import { Content, ContextualHelp, Heading, StatusLight } from '@react-spectrum/s2';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
-import { formatFps, videoSlots } from '../../model/editor.ts';
-import { isPortrait } from '../../model/stage-bar.ts';
-import type { MediaOutcome } from '../../model/stage-media.ts';
-import { useRuntime } from '../../runtime/context.tsx';
-import { useEditor } from '../../state/editor-store.ts';
-import { useEditorActions } from './editor-context.tsx';
-import { FullscreenPlayer, exitPreviewFullscreen } from './fullscreen-player.tsx';
-import { audioKey, imageKey, videoKey, type MediaKey, type PreviewStatus } from './preview-engine.ts';
-import { StageLoadNotice } from './stage-load-notice.tsx';
-import { StageMediaNotice } from './stage-media-notice.tsx';
-import { StageBar, SafeAreaOverlay } from './stage-bar.tsx';
-import { StageObjects } from './stage-objects.tsx';
-import { useAssetUrl } from './use-asset-url.ts';
-import { useStageMedia } from './use-stage-media.ts';
-import { EDITOR_COPY as E } from './editor-copy.ts';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SyntheticEvent,
+} from "react";
+import {
+  itemRangeSeconds,
+  type AssetRecord,
+  type AudioItem,
+  type DocumentRecord,
+  type Id,
+  type Sequence,
+  type VersionRef,
+} from "@cuccut/protocol";
+import {
+  Content,
+  ContextualHelp,
+  Heading,
+  StatusLight,
+} from "@react-spectrum/s2";
+import { style } from "@react-spectrum/s2/style" with { type: "macro" };
+import { videoSlots } from "../../model/editor.ts";
+import { isPortrait } from "../../model/stage-bar.ts";
+import type { MediaOutcome } from "../../model/stage-media.ts";
+import { useRuntime } from "../../runtime/context.tsx";
+import { useEditor } from "../../state/editor-store.ts";
+import { useEditorActions } from "./editor-context.tsx";
+import {
+  FullscreenPlayer,
+  exitPreviewFullscreen,
+} from "./fullscreen-player.tsx";
+import {
+  audioKey,
+  imageKey,
+  videoKey,
+  type MediaKey,
+  type PreviewStatus,
+} from "./preview-engine.ts";
+import { StageLoadNotice } from "./stage-load-notice.tsx";
+import { StageMediaNotice } from "./stage-media-notice.tsx";
+import { SafeAreaOverlay } from "./stage-bar.tsx";
+import { ToolbarRowContext } from "./toolbar-row.ts";
+import { EDITOR_LAYOUT_COPY as L } from "./editor-layout-copy.ts";
+import { StageObjects } from "./stage-objects.tsx";
+import { useAssetUrl } from "./use-asset-url.ts";
+import { useStageMedia } from "./use-stage-media.ts";
+import { EDITOR_COPY as E } from "./editor-copy.ts";
 
-const wrap = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0, minWidth: 0, backgroundColor: 'gray-100' });
-/** 预览顶部一行：序列名、画布与帧率，右边是画不出来的东西（产品设计 §5.4：看的是当前工作稿时不另加标志）。 */
-const head = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  paddingX: 16,
-  height: 32,
+const wrap = style({
+  display: "flex",
+  flexDirection: "column",
+  flexGrow: 1,
+  minHeight: 0,
+  minWidth: 0,
+});
+const problemsAt = style({
+  display: "flex",
+  alignItems: "center",
+  gap: 2,
   flexShrink: 0,
-  font: 'ui-sm',
-  color: 'gray-700',
 });
-const problemsAt = style({ display: 'flex', alignItems: 'center', gap: 2, marginStart: 'auto' });
 const problemList = style({ margin: 0, paddingStart: 16 });
-/** 舞台：全屏播放时整格进浏览器的全屏（`enterPreviewFullscreen`），画面之外一律纯黑。 */
-const stage = style({ position: 'relative', flexGrow: 1, minHeight: 0, backgroundColor: { default: 'transparent', isFullscreen: 'black' } });
-const frame = style({
-  position: 'absolute',
-  overflow: 'hidden',
-  borderRadius: { default: 'sm', isFullscreen: 'none' },
-  backgroundColor: 'black',
-  boxShadow: { default: 'emphasized', isFullscreen: 'none' },
+/** The stage: in full screen the whole of it goes into the browser's full screen (`enterPreviewFullscreen`), black around the picture. */
+const stage = style({
+  position: "relative",
+  flexGrow: 1,
+  minHeight: 0,
+  backgroundColor: { default: "transparent", isFullscreen: "black" },
 });
-const surface = style({ position: 'absolute', inset: 0, width: 'full', height: 'full' });
+/** The picture in agentcut's frame (FRAME: rounded-3xl, black, a faint ring); edge to edge in full screen. */
+const frame = style({
+  position: "absolute",
+  overflow: "hidden",
+  borderRadius: { default: "[24px]", isFullscreen: "none" },
+  backgroundColor: "black",
+  boxShadow: {
+    default: "[0 0 0 1px rgb(255 255 255 / 0.1)]",
+    isFullscreen: "none",
+  },
+});
+const surface = style({
+  position: "absolute",
+  inset: 0,
+  width: "full",
+  height: "full",
+});
 /** 源元素不显示，只给画布供帧。不用 display: none，免得浏览器不给它解码。 */
 const sources = style({
-  position: 'absolute',
+  position: "absolute",
   top: 0,
   insetStart: 0,
   width: 2,
   height: 2,
-  overflow: 'hidden',
+  overflow: "hidden",
   opacity: 0,
-  pointerEvents: 'none',
+  pointerEvents: "none",
 });
 const empty = style({
-  position: 'absolute',
+  position: "absolute",
   inset: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
   gap: 4,
-  font: 'ui',
-  color: 'gray-400',
-  textAlign: 'center',
-  pointerEvents: 'none',
+  font: "ui",
+  color: "gray-400",
+  textAlign: "center",
+  pointerEvents: "none",
 });
-const notice = style({ font: 'ui-xs', color: 'gray-400' });
+const notice = style({ font: "ui-xs", color: "gray-400" });
 
-const PADDING = 24;
+/** Room around the frame for the selection's handles and rotate knob. */
+const PADDING = 16;
+/** Height kept under the frame for the toolbar row (agentcut's TOOLBAR_ROW), which follows the frame's bottom edge. */
+const ROW_HEIGHT = 52;
 
 /**
  * 音频实例的源元素：每个 `<audio>` 都是一个媒体播放器，浏览器有上限，上千个（逐句配音）会把页面卡死。不多于
@@ -100,10 +148,12 @@ export function Preview({
   const rate = useEditor((s) => s.rate);
   const captionsHidden = useEditor((s) => s.captionsHidden);
   const safeArea = useEditor((s) => s.safeArea);
-  const [status, setStatus] = useState<PreviewStatus>({ kind: 'loading' });
+  const [status, setStatus] = useState<PreviewStatus>({ kind: "loading" });
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
+  const [toolbarRow, setToolbarRow] = useState<HTMLDivElement | null>(null);
+  const picked = useEditor((s) => s.selection.length > 0);
   // 主媒体放不出来：画面正中的常驻卡；找回之后按素材重挂源元素，重新取地址。
   const stageMedia = useStageMedia(videoId, sequence);
   // 预览卡住时的「重试」（产品设计 §5.1）：引擎重新接渲染内核、重新交视频；这部视频的媒体地址丢掉重新要，源元素全部重挂。
@@ -120,18 +170,20 @@ export function Preview({
   // 全屏里的字幕档位归全屏播放器管，退出全屏再按舞台的显隐还原。
   useEffect(() => engine.setRate(rate), [engine, rate]);
   useEffect(() => {
-    if (!fullscreen) engine.setCaptionView(captionsHidden ? 'off' : null);
+    if (!fullscreen) engine.setCaptionView(captionsHidden ? "off" : null);
   }, [engine, fullscreen, captionsHidden]);
   // 全屏以浏览器的 `fullscreenchange` 为准：浏览器自己的 Esc 退出不经过我们的键盘层。
   // 预览卸下（换视频、离开编辑器）时舞台还在全屏就退出来，不留一个没有播放器的全屏。
   useEffect(() => {
     const element = stageRef.current;
     const { setFullscreen } = useEditor.getState();
-    const sync = () => setFullscreen(!!element && document.fullscreenElement === element);
-    document.addEventListener('fullscreenchange', sync);
+    const sync = () =>
+      setFullscreen(!!element && document.fullscreenElement === element);
+    document.addEventListener("fullscreenchange", sync);
     return () => {
-      document.removeEventListener('fullscreenchange', sync);
-      if (element && document.fullscreenElement === element) exitPreviewFullscreen();
+      document.removeEventListener("fullscreenchange", sync);
+      if (element && document.fullscreenElement === element)
+        exitPreviewFullscreen();
       setFullscreen(false);
     };
   }, []);
@@ -153,7 +205,14 @@ export function Preview({
 
   const { width: cw, height: ch } = sequence.canvas;
   const padding = fullscreen ? 0 : PADDING;
-  const scale = Math.max(0, Math.min((box.width - padding * 2) / cw, (box.height - padding * 2) / ch));
+  const row = fullscreen ? 0 : ROW_HEIGHT;
+  const scale = Math.max(
+    0,
+    Math.min(
+      (box.width - padding * 2) / cw,
+      (box.height - padding * 2 - row) / ch,
+    ),
+  );
   const fw = Math.floor(cw * scale);
   const fh = Math.floor(ch * scale);
   // 画布按显示尺寸（乘设备像素比）画，不超过序列画布本身。
@@ -163,15 +222,22 @@ export function Preview({
   // 视频按素材分槽（同一时刻用到几处就几个元素）；图片按素材一个；音频轨道上的实例各一个（多了只挂播放头附近的）。
   const visuals = useMemo(() => {
     const videos = videoSlots(sequence).flatMap(({ asset, count }) =>
-      Array.from({ length: count }, (_, slot) => ({ key: videoKey(asset, slot), asset })),
+      Array.from({ length: count }, (_, slot) => ({
+        key: videoKey(asset, slot),
+        asset,
+      })),
     );
     const images = new Map<MediaKey, VersionRef>();
-    for (const item of sequence.items) if (item.type === 'image') images.set(imageKey(item.assetRef), item.assetRef);
+    for (const item of sequence.items)
+      if (item.type === "image")
+        images.set(imageKey(item.assetRef), item.assetRef);
     return { videos, images: [...images.entries()] };
   }, [sequence]);
   const audioWindow = useEditor((s) => Math.floor(s.playhead / AUDIO_STEP));
   const audios = useMemo(() => {
-    let items = sequence.items.filter((item): item is AudioItem => item.type === 'audio');
+    let items = sequence.items.filter(
+      (item): item is AudioItem => item.type === "audio",
+    );
     if (items.length > AUDIO_ALL) {
       const from = audioWindow * AUDIO_STEP - AUDIO_BEHIND;
       const to = (audioWindow + 1) * AUDIO_STEP + AUDIO_AHEAD;
@@ -180,10 +246,20 @@ export function Preview({
         return end > from && start < to;
       });
     }
-    return items.map((item) => ({ key: audioKey(item.id), asset: item.assetRef }));
+    return items.map((item) => ({
+      key: audioKey(item.id),
+      asset: item.assetRef,
+    }));
   }, [sequence, audioWindow]);
   const media = { ...visuals, audios };
-  const frameRect = { left: (box.width - fw) / 2, top: (box.height - fh) / 2, width: fw, height: fh };
+  // In the pane the frame sits at the top, level with the cards beside it (agentcut), with the toolbar row right under it;
+  // a frame limited by the width leaves the spare height below the row. Fullscreen centres the picture.
+  const frameRect = {
+    left: (box.width - fw) / 2,
+    top: fullscreen ? Math.max(0, (box.height - fh) / 2) : padding,
+    width: fw,
+    height: fh,
+  };
   // 舞台上的提示卡；全屏时夹在播放器的画面点击层与控件之间（点不到卡下面的画面，卡上的钮照常点）。
   const notices =
     fw > 0 && fh > 0 ? (
@@ -203,15 +279,18 @@ export function Preview({
 
   return (
     <div className={wrap}>
-      <div className={head}>
-        <span>
-          {sequenceDisplayName(sequence)} · {cw}×{ch} · {formatFps(sequence.fps)}
-        </span>
-        {status.kind === 'ready' && status.problems ? <Problems problems={status.problems} /> : null}
-      </div>
-      <div ref={stageRef} className={stage({ isFullscreen: fullscreen })} data-preview-stage>
+      <div
+        ref={stageRef}
+        className={stage({ isFullscreen: fullscreen })}
+        data-preview-stage
+      >
         <div className={frame({ isFullscreen: fullscreen })} style={frameRect}>
-          <canvas ref={canvasRef} className={surface} aria-label={E.previewCanvas} data-preview-status={status.kind} />
+          <canvas
+            ref={canvasRef}
+            className={surface}
+            aria-label={E.previewCanvas}
+            data-preview-status={status.kind}
+          />
           <div className={sources} aria-hidden>
             {media.videos.map(({ key, asset }) => (
               <MediaSource
@@ -224,7 +303,13 @@ export function Preview({
               />
             ))}
             {media.images.map(([key, asset]) => (
-              <MediaSource key={`${key}#${stageMedia.revived(asset.id)}.${reload}`} kind="image" mediaKey={key} videoId={videoId} asset={asset} />
+              <MediaSource
+                key={`${key}#${stageMedia.revived(asset.id)}.${reload}`}
+                kind="image"
+                mediaKey={key}
+                videoId={videoId}
+                asset={asset}
+              />
             ))}
             {media.audios.map(({ key, asset }) => (
               <MediaSource
@@ -237,7 +322,7 @@ export function Preview({
               />
             ))}
           </div>
-          {status.kind === 'error' ? (
+          {status.kind === "error" ? (
             <div className={empty} role="alert">
               <span>{E.previewFailed}</span>
               <span className={notice}>{status.message}</span>
@@ -248,18 +333,48 @@ export function Preview({
               <span className={notice}>{E.emptyOr}</span>
             </div>
           ) : null}
-          {safeArea && !fullscreen && isPortrait(sequence.canvas) ? <SafeAreaOverlay /> : null}
+          {safeArea && !fullscreen && isPortrait(sequence.canvas) ? (
+            <SafeAreaOverlay />
+          ) : null}
         </div>
-        {fw > 0 && fh > 0 && !fullscreen ? <StageObjects sequence={sequence} frame={frameRect} /> : null}
+        {fw > 0 && fh > 0 && !fullscreen ? (
+          <ToolbarRowContext.Provider value={toolbarRow}>
+            <StageObjects sequence={sequence} frame={frameRect} />
+          </ToolbarRowContext.Provider>
+        ) : null}
         {fullscreen ? (
-          <FullscreenPlayer stage={stageRef} sequence={sequence} assets={assets} documents={documents}>
+          <FullscreenPlayer
+            stage={stageRef}
+            sequence={sequence}
+            assets={assets}
+            documents={documents}
+          >
             {notices}
           </FullscreenPlayer>
         ) : (
           notices
         )}
+        {/* agentcut's TOOLBAR_ROW: the selection's controls dock here, under the picture rather than over it. */}
+        {fullscreen ? null : (
+          <div
+            className="cc-toolbar-row pointer-events-none absolute inset-x-0 flex min-h-11 items-center justify-center gap-2 px-2 pt-2 [&>*]:pointer-events-auto"
+            style={{ top: frameRect.top + fh }}
+          >
+            {picked ? null : (
+              <p className="cc-toolbar-hint truncate px-2 text-xs text-muted-foreground">
+                {L.pickHint}
+              </p>
+            )}
+            <div
+              ref={setToolbarRow}
+              className="cc-toolbar-host flex min-w-0 max-w-full justify-center"
+            />
+            {status.kind === "ready" && status.problems ? (
+              <Problems problems={status.problems} />
+            ) : null}
+          </div>
+        )}
       </div>
-      <StageBar stageRef={stageRef} sequence={sequence} assets={assets} />
     </div>
   );
 }
@@ -296,31 +411,72 @@ function MediaSource({
   asset,
   onOutcome,
 }: {
-  kind: 'video' | 'image' | 'audio';
+  kind: "video" | "image" | "audio";
   mediaKey: MediaKey;
   videoId: Id | null;
   asset: VersionRef;
-  onOutcome?: (mediaKey: MediaKey, asset: VersionRef, outcome: MediaOutcome) => void;
+  onOutcome?: (
+    mediaKey: MediaKey,
+    asset: VersionRef,
+    outcome: MediaOutcome,
+  ) => void;
 }) {
   const { engine } = useEditorActions();
   const { url, error, retry } = useAssetUrl(videoId, asset);
-  const [element, setElement] = useState<HTMLVideoElement | HTMLImageElement | HTMLAudioElement | null>(null);
+  const [element, setElement] = useState<
+    HTMLVideoElement | HTMLImageElement | HTMLAudioElement | null
+  >(null);
   useEffect(() => {
     engine.register(mediaKey, element);
     return () => engine.register(mediaKey, null);
   }, [engine, mediaKey, element]);
   const { id, revision } = asset;
   useEffect(() => {
-    if (error) onOutcome?.(mediaKey, { id, revision }, { kind: 'unresolved' });
+    if (error) onOutcome?.(mediaKey, { id, revision }, { kind: "unresolved" });
   }, [error, onOutcome, mediaKey, id, revision]);
   if (!url) return null;
-  if (kind === 'image') return <img ref={setElement} src={url} crossOrigin="anonymous" alt="" draggable={false} onError={retry} />;
+  if (kind === "image")
+    return (
+      <img
+        ref={setElement}
+        src={url}
+        crossOrigin="anonymous"
+        alt=""
+        draggable={false}
+        onError={retry}
+      />
+    );
   const failed = (event: SyntheticEvent<HTMLMediaElement>) => {
     const problem = event.currentTarget.error;
-    onOutcome?.(mediaKey, asset, { kind: 'error', code: problem?.code ?? 0, message: problem?.message ?? '' });
+    onOutcome?.(mediaKey, asset, {
+      kind: "error",
+      code: problem?.code ?? 0,
+      message: problem?.message ?? "",
+    });
     retry();
   };
-  const loaded = () => onOutcome?.(mediaKey, asset, { kind: 'loaded' });
-  if (kind === 'audio') return <audio ref={setElement} src={url} crossOrigin="anonymous" preload="auto" onError={failed} onLoadedData={loaded} />;
-  return <video ref={setElement} src={url} crossOrigin="anonymous" preload="auto" playsInline muted onError={failed} onLoadedData={loaded} />;
+  const loaded = () => onOutcome?.(mediaKey, asset, { kind: "loaded" });
+  if (kind === "audio")
+    return (
+      <audio
+        ref={setElement}
+        src={url}
+        crossOrigin="anonymous"
+        preload="auto"
+        onError={failed}
+        onLoadedData={loaded}
+      />
+    );
+  return (
+    <video
+      ref={setElement}
+      src={url}
+      crossOrigin="anonymous"
+      preload="auto"
+      playsInline
+      muted
+      onError={failed}
+      onLoadedData={loaded}
+    />
+  );
 }

@@ -16,6 +16,7 @@ import { Button as RACButton } from 'react-aria-components';
 import { HELP_COPY as COPY } from '../../copy.ts';
 import type { HelpGuide, HelpIcon } from '../../model/help-guides.ts';
 import { AgentIcon } from '../agent-icon.tsx';
+import { EDGE, INSET, ROW_EDGE, ROW_FILL } from './dialog-fills.ts';
 
 /** 指南的图标（原型 model-help.js 的 `icon`，换成 S2 图标；Agent 用自绘的机器人，同设置页）。 */
 const ICONS: Record<HelpIcon, ComponentType> = {
@@ -42,9 +43,9 @@ export function GuideIcon({ icon }: { icon: HelpIcon }) {
 /** 指南 / 常见问题的列表行（原型 .help-list / .help-row）：图标、标题与一句话、阅读时长、箭头。 */
 export function GuideList({ guides, onRead }: { guides: readonly HelpGuide[]; onRead(guide: HelpGuide): void }) {
   return (
-    <div className={list}>
+    <div className={`${list} ${EDGE} ${INSET}`}>
       {guides.map((guide) => (
-        <RACButton key={guide.id} className={(state) => row(state)} onPress={() => onRead(guide)}>
+        <RACButton key={guide.id} className={(state) => `${row(state)} ${ROW_EDGE} ${ROW_FILL}`} onPress={() => onRead(guide)}>
           <span className={rowIcon}>
             <GuideIcon icon={guide.icon} />
           </span>
@@ -105,7 +106,8 @@ export const textLink = style({
   borderRadius: 'sm',
 });
 
-const list = style({ borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', borderRadius: 'lg', overflow: 'hidden' });
+/** Edge and fill from dialog-fills.ts. */
+const list = style({ borderWidth: 1, borderStyle: 'solid', borderRadius: '[16px]', overflow: 'hidden' });
 const row = style({
   display: 'flex',
   alignItems: 'center',
@@ -116,8 +118,6 @@ const row = style({
   borderWidth: 0,
   borderTopWidth: { default: 1, ':first-child': 0 },
   borderStyle: 'solid',
-  borderColor: 'gray-200',
-  backgroundColor: { default: 'transparent', isHovered: 'gray-75', isPressed: 'gray-100' },
   textAlign: 'start',
   cursor: 'pointer',
   outlineStyle: { default: 'none', isFocusVisible: 'solid' },

@@ -5,11 +5,6 @@ export const zhHant: GeneralSettingsMessages = {
   language: '語言',
   languageDesc: '立即生效，不需要重新啟動。',
   languageSystem: (current: string) => `跟隨系統（${current}）`,
-  appearance: '外觀',
-  appearanceDesc: '只影響這台電腦上的 CucCut 視窗。',
-  schemeSystem: '跟隨系統',
-  schemeLight: '淺色',
-  schemeDark: '深色',
 
   saveFailed: (message: string) => `無法儲存：${message}`,
 

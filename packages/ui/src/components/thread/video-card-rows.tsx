@@ -50,7 +50,7 @@ export const cardVars = style({
   '--cc-vc-warn': { type: 'color', value: 'orange-900' },
   '--cc-vc-err': { type: 'color', value: 'red-900' },
   '--cc-vc-line': { type: 'borderColor', value: 'gray-200' },
-  '--cc-vc-bg': { type: 'backgroundColor', value: 'gray-25' },
+  '--cc-vc-bg': { type: 'backgroundColor', value: 'gray-50' },
   '--cc-vc-ic-bg': { type: 'backgroundColor', value: 'blue-100' },
   '--cc-vc-ic-err-bg': { type: 'backgroundColor', value: 'red-100' },
   '--cc-vc-ic-idle-bg': { type: 'backgroundColor', value: 'gray-75' },

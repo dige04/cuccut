@@ -36,12 +36,14 @@ export function SessionSlotsProvider({ children }: { children: ReactNode }) {
 
 /** Where a slot sits in the session layout. `className` styles the container (e.g. the inspector card's spacing). */
 export function SessionSlot({ name, className }: { name: SessionSlotName; className?: string }) {
-  const context = useContext(Context);
+  // Depend on the stable `register` only: the context value changes whenever a slot registers, and a ref callback
+  // that changes detaches and reattaches, which would register again forever.
+  const register = useContext(Context)?.register;
   const ref = useCallback(
     (element: HTMLDivElement | null) => {
-      context?.register(name, element);
+      register?.(name, element);
     },
-    [context, name],
+    [register, name],
   );
   return <div ref={ref} className={className} data-session-slot={name} />;
 }

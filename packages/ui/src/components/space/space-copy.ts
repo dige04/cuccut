@@ -24,7 +24,7 @@ const count = (n: number, one: string, other: string) => `${n} ${n === 1 ? one :
  */
 const en = {
   searchPlaceholder: "Search names, files, or what's said in videos",
-  searchLabel: 'Search Space',
+  searchLabel: 'Search the Library',
 
   // 列表与菜单
   openVideo: 'Open video',
@@ -162,7 +162,7 @@ const en = {
   trashVideoTitle: 'Delete this video?',
   trashVideoBody: "The whole video folder moves to the project's Trash and can be restored. Linked original assets stay where they are.",
   trashVideoRelated: (n: number) =>
-    `${count(n, 'item', 'items')} exported or generated from it will stay in Space and won't be deleted with the video:`,
+    `${count(n, 'item', 'items')} exported or generated from it will stay in the Library and won't be deleted with the video:`,
   trashVideoConfirm: 'Delete video',
 
   // 彻底删除
@@ -180,7 +180,7 @@ const en = {
   renameTitle: 'Rename',
   renameLabel: 'Display name',
   renameHint: (fileName: string) =>
-    `Only changes the name shown in Space; the file itself stays the same. Leave it empty to go back to "${fileName}".`,
+    `Only changes the name shown in the Library; the file itself stays the same. Leave it empty to go back to "${fileName}".`,
   save: 'Save',
 
   // 来源视频改过（产品设计 §4.6）
@@ -216,10 +216,10 @@ const en = {
   openForEdit: 'Open for editing',
   newVideo: 'New video',
   revealUnavailable: "This file isn't in any project or session folder, so there's no location to show",
-  sidebarLabel: 'Space categories',
+  sidebarLabel: 'Library categories',
   kindsHeader: 'Categories',
   mineHeader: 'Organize',
-  sidebarNote: 'Space shows the videos, assets, and outputs in all your projects. The files stay in their own project folders. Files exported or generated from a video are grouped with it; browse by type to see them one by one.',
+  sidebarNote: 'The Library shows the videos, assets, and outputs in all your projects. The files stay in their own project folders. Files exported or generated from a video are grouped with it; browse by type to see them one by one.',
   all: 'All',
   emptyFiltered: 'No matching items',
   emptyTrash: 'Trash is empty',
@@ -239,14 +239,14 @@ const en = {
   issuesTitle: (n: number) => (n === 1 ? "1 folder wasn't fully listed" : `${n} folders weren't fully listed`),
   issueTruncated: (detail: string) => `Too many files, only some were listed: ${detail}`,
   issueUnreadable: (detail: string) => `Can't read: ${detail}`,
-  preparing: 'Getting Space ready…',
+  preparing: 'Getting the Library ready…',
   preparingBody: 'The first time, project folders need to be scanned. This takes a moment.',
   /** 新建菜单项的说明：已经筛了项目时写明建在哪个项目里。 */
   createIn: (project: string, hint: string) => `In "${project}" · ${hint}`,
   /** 「新建空视频」等子菜单的读屏名：`label` 是菜单项的名字。 */
   whichProjectFor: (label: string) => `${label}: which project`,
   entryActions: (name: string) => `Actions for "${name}"`,
-  entriesLabel: 'Space items',
+  entriesLabel: 'Library items',
   columnName: 'Name',
   columnKind: 'Type',
   columnSource: 'Source',

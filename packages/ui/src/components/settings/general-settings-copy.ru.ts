@@ -5,11 +5,6 @@ export const ru: GeneralSettingsMessages = {
   language: "Язык",
   languageDesc: "Применяется сразу, перезапуск не нужен.",
   languageSystem: (current: string) => `Как в системе (${current})`,
-  appearance: "Внешний вид",
-  appearanceDesc: "Влияет только на окна CucCut на этом компьютере.",
-  schemeSystem: "Система",
-  schemeLight: "Светлый",
-  schemeDark: "Тёмный",
 
   saveFailed: (message: string) => `Не удалось сохранить: ${message}`,
 

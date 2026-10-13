@@ -5,11 +5,6 @@ export const ko: GeneralSettingsMessages = {
   language: '언어',
   languageDesc: '다시 시작하지 않아도 바로 적용됩니다.',
   languageSystem: (current: string) => `시스템(${current})`,
-  appearance: '외관',
-  appearanceDesc: '이 컴퓨터의 CucCut 창에만 적용됩니다.',
-  schemeSystem: '시스템',
-  schemeLight: '라이트',
-  schemeDark: '다크',
 
   saveFailed: (message: string) => `저장하지 못했습니다: ${message}`,
 

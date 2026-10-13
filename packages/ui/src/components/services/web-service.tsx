@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import { localizeText, type ServiceStatus, type WebSession } from '@cuccut/protocol';
-import { ActionButton, AlertDialog, Badge, Button, DialogTrigger, Link, Switch, Text, ToastQueue } from '@react-spectrum/s2';
+import { ActionButton, AlertDialog, Badge, Button, DialogTrigger, Switch, Text, ToastQueue } from '@react-spectrum/s2';
 import Copy from '@react-spectrum/s2/icons/Copy';
 import OpenIn from '@react-spectrum/s2/icons/OpenIn';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
+import { RouteLink } from '../../cc/components/page-chrome.tsx';
 import { SERVICE_COPY, SERVICES_PAGE_COPY } from '../../copy.ts';
 import { browserLabel, serviceBusy, serviceStateLabel, webSessionMeta } from '../../model/services.ts';
 import { useRuntime } from '../../runtime/context.tsx';
-import { useShell } from '../../state/shell-store.ts';
 import { useNow } from '../use-now.ts';
-import { UtilityPage } from '../utility-page.tsx';
-import { detailXs, lede, panel, ServiceCard, ServiceLightDot } from './service-card.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
+import { detailXs, panel, ServiceCard, ServiceLightDot } from './service-card.tsx';
 import { AutostartCheckbox, ErrorFix, PortRow, SectionHead, SetRow, useServiceStatus } from './service-parts.tsx';
 import { COMMON_COPY, WEB_COPY } from './services-copy.ts';
 import { copyText, toastFailure, useConfigureService, useFlipService } from './use-service-actions.ts';
@@ -25,7 +25,7 @@ import { copyText, toastFailure, useConfigureService, useFlipService } from './u
  */
 
 const actions = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 12 });
-const note = style({ margin: 0, marginTop: 8, maxWidth: '[640px]', font: 'ui-xs', color: 'gray-600' });
+const note = style({ margin: 0, marginTop: 8, font: 'ui-xs', color: 'gray-600' });
 const line = style({
   display: 'flex',
   alignItems: 'center',
@@ -40,10 +40,9 @@ const line = style({
 const who = style({ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, minWidth: 0 });
 const name = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 const empty = style({ margin: 0, font: 'ui-sm', color: 'gray-600' });
-const related = style({ margin: 0, marginTop: 24, maxWidth: '[640px]', font: 'ui-sm', color: 'gray-600' });
+const related = style({ margin: 0, marginTop: 24, font: 'ui-sm', color: 'gray-600' });
 
 export function WebServicePage() {
-  const go = useShell((s) => s.go);
   const { status, ready, connected, state } = useServiceStatus('web');
   const flip = useFlipService('web');
   const copy = SERVICE_COPY.web;
@@ -69,15 +68,16 @@ export function WebServicePage() {
   }
 
   return (
-    <UtilityPage
+    <UtilityShell
       kind="services"
+      flow
+      blurb={WEB_COPY.lede}
       title={WEB_COPY.title}
       actions={
         <Badge size="S" fillStyle="subtle" variant="neutral">
           {copy.scope}
         </Badge>
       }>
-      <p className={lede}>{WEB_COPY.lede}</p>
       <ServiceCard
         id="web"
         state={state}
@@ -112,11 +112,12 @@ export function WebServicePage() {
 
       <p className={related}>
         {WEB_COPY.apiMoved}{' '}
-        <Link isStandalone isQuiet onPress={() => go({ tab: 'services', service: 'model-api' })}>
+        {/* A neutral inline link: the page's one yellow element is its Start action. */}
+        <RouteLink route={{ tab: 'services', service: 'model-api' }} className="rounded-sm text-foreground underline decoration-foreground/40 underline-offset-2 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring">
           {WEB_COPY.apiMovedLink}
-        </Link>
+        </RouteLink>
       </p>
-    </UtilityPage>
+    </UtilityShell>
   );
 }
 

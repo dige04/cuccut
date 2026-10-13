@@ -1,0 +1,27 @@
+import type { WorkspaceMessages } from './workspace-copy.ts';
+
+export const fr: WorkspaceMessages = {
+  aside: 'Tout ce qui est ici s’applique à tous les projets',
+  generalBlurb: 'L’apparence et la langue de CucCut, l’emplacement des téléchargements et ce qu’il peut récupérer sur Internet.',
+  shortcutsBlurb: 'Les touches qui fonctionnent partout dans CucCut. Les raccourcis de l’éditeur se trouvent dans l’Aide (F1).',
+  shortcutsPanel: 'Partout dans CucCut',
+  fontsBlurb: 'Les polices des sous-titres et des titres : d’où elles viennent, et celles déjà présentes sur cet ordinateur.',
+  privacyBlurb: 'Ce qui reste sur cet ordinateur, ce qui peut être envoyé aux fournisseurs cloud et ce que les agents peuvent faire sans demander.',
+  diagnosticsBlurb: 'Le Runtime local, ses journaux et la part de cet ordinateur que les tâches de fond peuvent utiliser.',
+  aboutBlurb: 'Les versions de l’app, de l’interface et du Runtime, et la façon dont CucCut se met à jour.',
+  checking: 'Vérification…',
+  noAgent: 'Aucun agent prêt',
+  shortcutCount: (n) => (n <= 1 ? `${n} raccourci` : `${n} raccourcis`),
+  skillCount: (n) => (n === 0 ? 'Aucun pour l’instant' : n === 1 ? '1 skill' : `${n} skills`),
+  glossaryCount: (n) => (n === 0 ? 'Aucun pour l’instant' : n === 1 ? '1 glossaire' : `${n} glossaires`),
+  grantCount: (n) => (n === 0 ? 'Aucune autorisation active' : n === 1 ? '1 autorisation active' : `${n} autorisations actives`),
+  runtimeOn: 'Runtime connecté',
+  runtimeOff: 'Runtime non connecté',
+  installed: (n) => (n === 0 ? 'Aucun installé' : n === 1 ? '1 installé' : `${n} installés`),
+  noDefault: 'Pas encore de défaut',
+  version: (version) => `Version ${version}`,
+  desktopOnly: 'Application de bureau uniquement',
+  notYet: 'Pas encore disponible',
+  loadFailed: 'Chargement impossible',
+  fontsSummary: 'Pour les sous-titres et les titres',
+};

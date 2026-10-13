@@ -38,8 +38,8 @@ import { useConnection } from '../../state/connection-store.ts';
 import { useSkillsLoader } from '../use-skills.ts';
 import { SKILLS_COPY, SKILL_DETAIL_COPY } from './agent-copy.ts';
 import { GithubImportDialog, SkillDetailDialog } from './agent-skill-detail.tsx';
+import { PANEL, PANEL_HOVER } from './settings-ui.tsx';
 
-const lede = style({ marginTop: 0, marginBottom: 24, font: 'body-sm', color: 'gray-800' });
 const bar = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 16 });
 const search = style({ flexGrow: 1, flexBasis: 160, minWidth: 0, maxWidth: 280 });
 const spacer = style({ flexGrow: 1 });
@@ -54,11 +54,6 @@ const grid = style({
 const card = style({
   position: 'relative',
   minWidth: 0,
-  borderRadius: 'lg',
-  backgroundColor: 'gray-50',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: { default: 'gray-200', ':hover': 'gray-300' },
 });
 const cardMain = style({
   display: 'flex',
@@ -71,7 +66,7 @@ const cardMain = style({
   padding: 16,
   boxSizing: 'border-box',
   borderStyle: 'none',
-  borderRadius: 'lg',
+  borderRadius: '[24px]',
   backgroundColor: 'transparent',
   color: 'gray-800',
   textAlign: 'start',
@@ -101,8 +96,6 @@ const empty = style({
   gap: 8,
   paddingY: 48,
   paddingX: 24,
-  borderRadius: 'lg',
-  backgroundColor: 'gray-50',
   textAlign: 'center',
 });
 const emptyTitle = style({ margin: 0, font: 'title-sm', color: 'gray-900' });
@@ -188,7 +181,7 @@ export function AgentSkills() {
   let body;
   if (!list.loaded) {
     body = (
-      <div className={empty} role="status">
+      <div className={`${empty} ${PANEL}`} role="status">
         {!connected ? (
           <p className={emptyBody}>{SKILLS_COPY.disconnected}</p>
         ) : list.status === 'failed' ? (
@@ -206,7 +199,7 @@ export function AgentSkills() {
   } else if (!list.skills.length) {
     // 真的一个都没有（目前应用不自带 skill）：说清 skill 是什么，给两个添加入口；浏览器里只说明去桌面应用。
     body = (
-      <div className={empty}>
+      <div className={`${empty} ${PANEL}`}>
         <h2 className={emptyTitle}>{SKILLS_COPY.emptyTitle}</h2>
         <p className={emptyBody}>{web ? SKILLS_COPY.emptyWeb : SKILLS_COPY.emptyBody}</p>
         {web ? null : (
@@ -225,7 +218,7 @@ export function AgentSkills() {
     );
   } else if (!rows.length) {
     body = (
-      <div className={empty} role="status">
+      <div className={`${empty} ${PANEL}`} role="status">
         <h2 className={emptyTitle}>
           {q ? SKILLS_COPY.noMatch(q) : SKILLS_COPY.noneInTab(SKILL_ORIGIN_LABEL[tab as SkillSummary['origin']])}
         </h2>
@@ -236,7 +229,7 @@ export function AgentSkills() {
     body = (
       <div className={grid} role="list">
         {rows.map((skill) => (
-          <div key={skill.id} role="listitem" className={card}>
+          <div key={skill.id} role="listitem" className={`${card} ${PANEL_HOVER}`}>
             <button type="button" className={cardMain} aria-label={SKILLS_COPY.view(skill.name)} onClick={() => setOpenId(skill.id)}>
               <span className={cardName({ isOff: !skill.enabled })} title={skill.name}>
                 {skill.name}
@@ -255,7 +248,6 @@ export function AgentSkills() {
 
   return (
     <>
-      <p className={lede}>{SKILLS_COPY.lede}</p>
       <div className={bar}>
         <SearchField aria-label={SKILLS_COPY.search} placeholder={SKILLS_COPY.search} styles={search} value={query} onChange={setQuery} />
         <SegmentedControl aria-label={SKILLS_COPY.filter} selectedKey={tab} onSelectionChange={(key) => setTab(key as SkillTab)}>

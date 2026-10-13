@@ -120,7 +120,7 @@ async function nextExact(canvas: HTMLCanvasElement, engine: { readonly exact: bo
 // 按结构而不是界面文字找元素：界面的 aria-label 随界面语言变。
 const PREVIEW_CANVAS = 'canvas[data-preview-status]';
 const PREVIEW_READY = 'canvas[data-preview-status="ready"]';
-const PLAY_BUTTON = 'button.bc-transport-play';
+const PLAY_BUTTON = 'button.cc-transport-play';
 
 /**
  * 预览播放的端到端基准（`npm run bench:preview`，`tools/preview-bench.mjs`）：随产物构建、应用自己不加载。

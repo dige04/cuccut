@@ -1,22 +1,18 @@
+import type { ReactNode } from 'react';
 import type { Id } from '@cuccut/protocol';
-import { Content, Heading, IllustratedMessage } from '@react-spectrum/s2';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { TASK_VIEW_COPY } from '../copy.ts';
-import { taskGroups } from '../model/task-list.ts';
+import { taskGroups, type TaskGroup } from '../model/task-list.ts';
 import { TaskCard } from './tasks/task-card.tsx';
 import { TaskDetail } from './tasks/task-detail.tsx';
+import { RAIL_COPY } from './tasks/rail-copy.ts';
 import { useTaskRows } from './tasks/use-task-rows.ts';
 import { useNow } from './use-now.ts';
-import { UtilityPage } from './utility-page.tsx';
-
-/** 原型 `.t-section` 与 `.tasks`。 */
-const sectionTitle = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-600', margin: 0, marginTop: { default: 0, isLater: 28 } });
-const list = style({ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 });
-const empty = style({ marginTop: 12 });
+import { UtilityShell } from './utility-sidebar.tsx';
 
 /**
- * 后台任务（原型 page-tasks.jsx、产品设计 §2.1 用户修订）：Agent 会话里的任务与转录、配音、生成这些 Job 合成一张表，
- * 分「进行中 / 已完成」两节；选一条看详情。任务属于会话或视频，这里只是汇总。
+ * Background tasks (agentcut workspace page): agent tasks and the jobs behind transcription, dubbing, generation and
+ * exports in one list, split into "In progress" and "Done"; pick one for its details. Tasks belong to a session or a
+ * video; this page only gathers them.
  */
 export function TasksPage({ taskId }: { taskId?: Id }) {
   return taskId ? <TaskDetail taskId={taskId} /> : <TaskList />;
@@ -25,40 +21,45 @@ export function TasksPage({ taskId }: { taskId?: Id }) {
 function TaskList() {
   const { rows, ready } = useTaskRows();
   const [active, history] = taskGroups(rows);
-  // 在跑的每秒刷新（「已进行」与进度）；都结束了只需让「多久前」慢慢走。
+  // Running tasks tick every second (elapsed time and progress); when all are done only "how long ago" moves.
   const now = useNow(active.items.length ? 1000 : 30_000);
 
   return (
-    <UtilityPage kind="tasks" title={TASK_VIEW_COPY.pageTitle}>
-      <h2 className={sectionTitle({})}>{TASK_VIEW_COPY.activeSection}</h2>
-      {active.items.length ? (
-        <div className={list}>
-          {active.items.map((row) => (
+    <UtilityShell kind="tasks" title={TASK_VIEW_COPY.pageTitle} blurb={RAIL_COPY.tasksBlurb}>
+      <TaskSection group={active} now={now} empty={ready ? <Empty title={TASK_VIEW_COPY.emptyActive}>{TASK_VIEW_COPY.emptyActiveBody}</Empty> : null} />
+      <TaskSection group={history} now={now} empty={ready ? <Empty title={TASK_VIEW_COPY.emptyHistory} /> : null} />
+    </UtilityShell>
+  );
+}
+
+function TaskSection({ group, now, empty }: { group: TaskGroup; now: number; empty: ReactNode }) {
+  const heading = `tasks-${group.id}`;
+  return (
+    <section data-cc aria-labelledby={heading} className="flex flex-col gap-3">
+      <h3 id={heading} className="flex items-baseline gap-2 px-1 text-sm font-medium text-foreground">
+        {/* The same names as the rail ("In progress", "Done"). */}
+        {group.id === 'active' ? TASK_VIEW_COPY.activeSection : TASK_VIEW_COPY.historySection}
+        {group.items.length ? <span className="text-xs text-muted-foreground tabular-nums">{group.items.length}</span> : null}
+      </h3>
+      {group.items.length ? (
+        <ul className="flex flex-col gap-2">
+          {group.items.map((row) => (
             <TaskCard key={row.id} row={row} now={now} />
           ))}
-        </div>
-      ) : ready ? (
-        <div className={empty}>
-          <IllustratedMessage size="S">
-            <Heading>{TASK_VIEW_COPY.emptyActive}</Heading>
-            <Content>{TASK_VIEW_COPY.emptyActiveBody}</Content>
-          </IllustratedMessage>
-        </div>
-      ) : null}
-      <h2 className={sectionTitle({ isLater: true })}>{TASK_VIEW_COPY.historySection}</h2>
-      {history.items.length ? (
-        <div className={list}>
-          {history.items.map((row) => (
-            <TaskCard key={row.id} row={row} now={now} />
-          ))}
-        </div>
-      ) : ready ? (
-        <div className={empty}>
-          <IllustratedMessage size="S">
-            <Heading>{TASK_VIEW_COPY.emptyHistory}</Heading>
-          </IllustratedMessage>
-        </div>
-      ) : null}
-    </UtilityPage>
+        </ul>
+      ) : (
+        empty
+      )}
+    </section>
+  );
+}
+
+/** A section with nothing in it yet (agentcut `Empty`): what this place is for. */
+function Empty({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="flex flex-col items-start gap-1.5 rounded-3xl bg-card px-5 py-6 ring-1 ring-foreground/10">
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      {children ? <p className="max-w-prose text-sm text-muted-foreground">{children}</p> : null}
+    </div>
   );
 }

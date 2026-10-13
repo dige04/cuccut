@@ -44,19 +44,16 @@
 }
 .cc-amd :is(h1, h2, h3, h4, h5, h6) {
   margin: 0;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--cc-at-heading);
   line-height: 1.4;
 }
-.cc-amd :is(h1, h2) {
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--cc-at-line);
-}
 .cc-amd h1 {
-  font-size: 18px;
+  font-size: 17px;
 }
 .cc-amd h2 {
-  font-size: 16px;
+  font-size: 15px;
 }
 .cc-amd :is(h3, h4, h5, h6) {
   font-size: 14px;
@@ -64,6 +61,9 @@
 .cc-amd :is(ul, ol) {
   margin: 0;
   padding-inline-start: 20px;
+}
+.cc-amd li::marker {
+  color: var(--cc-at-muted);
 }
 .cc-amd li + li {
   margin-top: 4px;
@@ -76,8 +76,8 @@
 }
 .cc-amd blockquote {
   margin: 0;
-  padding-inline-start: 12px;
-  border-inline-start: 4px solid var(--cc-at-quote);
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--cc-at-quote);
   color: var(--cc-at-muted);
 }
 .cc-amd img {
@@ -85,11 +85,11 @@
   border-radius: 8px;
 }
 .cc-amd-code {
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--cc-at-code-bg);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 8%);
+  font-family: var(--cc-font-mono);
+  font-size: 0.85em;
 }
 
 /* 代码块：浅底、圆角 8；长行换行不横滚；右上角 hover 或聚焦时出复制。 */
@@ -98,13 +98,15 @@
 }
 .cc-amd-pre pre {
   margin: 0;
-  padding: 8px 40px 8px 12px;
-  border-radius: 8px;
-  background: var(--cc-at-pre-bg);
-  box-shadow: inset 0 0 0 1px var(--cc-at-line);
+  padding: 10px 40px 10px 12px;
+  border-radius: 14px;
+  background: rgb(0 0 0 / 30%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--border), transparent 40%),
+    var(--field-shadow);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family: var(--cc-font-mono);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -119,11 +121,9 @@
   opacity: 1;
 }
 
-/* 表格：圆角边框，列等分。 */
+/* Tables: agentcut's quiet grid — a hairline under the head, fainter lines between rows, no box. */
 .cc-amd-table {
-  border-radius: 8px;
-  box-shadow: inset 0 0 0 1px var(--cc-at-line);
-  overflow: hidden;
+  overflow-x: auto;
 }
 .cc-amd-table table {
   width: 100%;
@@ -136,18 +136,16 @@
   padding: 6px 8px;
   text-align: start;
   vertical-align: top;
-  border-top: 1px solid var(--cc-at-line);
+  border-bottom: 1px solid color-mix(in oklab, var(--border), transparent 60%);
   overflow-wrap: anywhere;
 }
-.cc-amd-table thead tr:first-child th {
-  border-top: 0;
-}
-.cc-amd-table :is(th + th, td + td) {
-  border-inline-start: 1px solid var(--cc-at-line);
+.cc-amd-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 .cc-amd-table th {
-  background: var(--cc-at-pre-bg);
-  font-weight: 600;
+  border-bottom-color: var(--border);
+  font-weight: 500;
+  color: var(--cc-at-heading);
 }
 
 /* 正文里的文件路径：S2 按钮压成行内代码的样子（无层规则盖过 S2 的 @layer）。 */
@@ -156,13 +154,15 @@
   height: auto;
   min-height: 0;
   min-width: 0;
-  padding: 0 4px;
+  padding: 1px 5px;
   margin: 0;
-  border-radius: 4px;
+  border-radius: 6px !important;
   vertical-align: baseline;
-  background: var(--cc-at-code-bg);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 12px;
+  background: rgb(255 255 255 / 8%) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  font-family: var(--cc-font-mono);
+  font-size: 0.85em;
   line-height: inherit;
   color: var(--cc-at-link);
   cursor: pointer;
@@ -174,7 +174,7 @@
   margin: 0;
 }
 .cc-amd .cc-amd-path:hover {
-  background: var(--cc-at-code-bg-hover);
+  background: rgb(255 255 255 / 14%) !important;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -183,43 +183,72 @@
 /* 两段文字之间的那一行摘要（steps-group.tsx）：灰字 + 箭头，不放图标，字号跟正文；悬停与点开时字色加深。
    在跑时前面是那一步的像素加载图形，类别名扫光，后面灰字的已用时间。 */
 .cc-work__head {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  align-self: flex-start;
-  gap: 4px;
+  align-self: stretch;
+  gap: 6px;
+  width: 100%;
   max-width: 100%;
-  min-height: 24px;
-  padding: 2px 8px;
-  margin-inline-start: -8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+  min-height: 30px;
+  padding: 4px 14px 4px 8px;
+  margin: 0;
+  border: 1px solid color-mix(in oklab, var(--border), transparent 40%);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--card), transparent 70%);
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   text-align: start;
   color: var(--cc-at-muted);
   cursor: pointer;
   box-sizing: border-box;
+  transition:
+    color 150ms ease-out,
+    border-color 150ms ease-out,
+    background-color 150ms ease-out;
 }
 .cc-work__head.is-live {
   gap: 8px;
 }
+.cc-work__head:hover,
+.cc-work__head[aria-expanded='true'] {
+  border-color: var(--border);
+  background: color-mix(in oklab, var(--card), transparent 30%);
+}
 .cc-work__head:focus-visible {
-  outline: 2px solid var(--cc-at-focus);
-  outline-offset: -2px;
+  outline: 3px solid color-mix(in oklab, var(--ring), transparent 50%);
+  outline-offset: 0;
 }
 .cc-work__head:hover .cc-work__sum:not(.cc-shimmer),
 .cc-work__head[aria-expanded='true'] .cc-work__sum:not(.cc-shimmer) {
   color: var(--cc-at-text);
 }
-.cc-work__head:hover .cc-work__chev {
-  color: var(--cc-at-muted);
-}
 .cc-work__sum {
+  flex: none;
+  max-width: 60%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cc-work__head.is-live .cc-work__sum {
+  flex: 0 1 auto;
+  max-width: none;
+}
+/* The last step, as a terminal shows it: monospace, faint, cut at the edge. */
+.cc-work__last {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--cc-font-mono);
+  font-size: 11.5px;
+  color: var(--cc-at-faint);
+}
+.cc-work__last::before {
+  content: '·';
+  margin-inline-end: 6px;
+  font-family: var(--cc-font-sans);
 }
 .cc-work__loader {
   flex: none;
@@ -238,11 +267,29 @@
   flex: none;
   display: inline-flex;
   color: var(--cc-at-faint);
+  transition: rotate 150ms ease-out;
+}
+.cc-work__chev svg {
+  width: 12px;
+  height: 12px;
+}
+.cc-work__head[aria-expanded='true'] .cc-work__chev {
+  rotate: 90deg;
+}
+:dir(rtl) .cc-work__chev {
+  scale: -1 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-work__chev {
+    transition: none;
+  }
 }
 /* 点开后是一个带边框的框：一步一行、一张回执一行，行间分隔线；行再点开，详情在框里。 */
 .cc-steps--box {
-  border: 1px solid var(--cc-at-line);
-  border-radius: 10px;
+  align-self: stretch;
+  border: 1px solid color-mix(in oklab, var(--border), transparent 40%);
+  border-radius: 20px;
+  background: color-mix(in oklab, var(--card), transparent 50%);
   overflow: hidden;
 }
 .cc-steps--box > li + li {
@@ -320,7 +367,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family: var(--cc-font-mono);
   color: var(--cc-at-muted);
 }
 .cc-step__meta {
@@ -345,9 +392,9 @@
   min-width: 0;
 }
 .cc-step__sec {
-  border-radius: 8px;
-  background: var(--cc-at-pre-bg);
-  box-shadow: inset 0 0 0 1px var(--cc-at-line);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 30%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--border), transparent 40%);
   overflow: hidden;
 }
 .cc-step__sec header {
@@ -367,7 +414,7 @@
   overflow-wrap: anywhere;
   margin: 0;
   padding: 4px 8px 8px;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-family: var(--cc-font-mono);
   font-size: 12px;
   line-height: 1.5;
   user-select: text;
@@ -479,7 +526,6 @@
   align-items: center;
   gap: 8px;
   min-height: 24px;
-  padding-inline-start: 36px;
   font-size: 12px;
   color: var(--cc-at-faint);
 }
@@ -520,4 +566,30 @@
 }
 .cc-turn:hover .cc-turn__at {
   visibility: visible;
+}
+
+/* ---------- User turn ---------- */
+/* agentcut: a right-aligned white/8 bubble, the corner nearest the composer tucked in. */
+[data-cc-bubble] {
+  max-width: 85%;
+  padding: 8px 14px;
+  border-radius: 20px;
+  border-end-end-radius: 6px;
+  background-color: rgb(255 255 255 / 8%);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--foreground);
+}
+/* agentcut's reply bubble (agent-thread.tsx `AgentMessage`): max-w-[92%] rounded-2xl rounded-bl-md border bg-card/60 px-3 py-2. */
+[data-cc-reply] {
+  max-width: 92%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  border-end-start-radius: 6px;
+  background-color: color-mix(in oklab, var(--card) 60%, transparent);
+  font-size: 14px;
+}
+.cc-steps-group {
+  margin-block-end: 4px;
 }

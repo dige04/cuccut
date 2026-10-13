@@ -271,7 +271,7 @@ export function DubGroupCard({
         </span>
       </div>
       {open ? (
-        <div className={`${body} bc-scroll`}>
+        <div className={`${body} cc-scroll`}>
           {g.files.map((row, index) => {
             const statusText = row.status ? DUB_STATUS_TEXT[row.status] : null;
             const content = (

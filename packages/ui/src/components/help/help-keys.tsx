@@ -2,7 +2,9 @@ import { SegmentedControl, SegmentedControlItem } from '@react-spectrum/s2';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { HELP_COPY as COPY, SHORTCUT_SHEET_COPY } from '../../copy.ts';
 import { keyLabel } from '../../model/key-labels.ts';
-import { intro, kbd, sectionHeading, sectionTitle } from './help-guide-list.tsx';
+import { KeyCombo } from '../settings/settings-ui.tsx';
+import { ROW_EDGE } from './dialog-fills.ts';
+import { intro, sectionHeading, sectionTitle } from './help-guide-list.tsx';
 
 /**
  * 快捷键页（原型 help-center.jsx 的 `section === 'keys'`）：和编辑器的快捷键清单（shortcut-sheet）同一份 rows，
@@ -21,9 +23,9 @@ export function HelpKeys({ mac, onPlatform }: { mac: boolean; onPlatform(mac: bo
       <p className={intro}>{COPY.keysIntro}</p>
       <div>
         {SHORTCUT_SHEET_COPY.rows.map(([label, keys]) => (
-          <div key={label} className={row}>
-            <span>{label}</span>
-            <kbd className={kbd}>{keyLabel(keys, mac)}</kbd>
+          <div key={label} className={`${row} ${ROW_EDGE}`}>
+            <span className={name}>{label}</span>
+            <KeyCombo keys={keyLabel(keys, mac)} />
           </div>
         ))}
       </div>
@@ -31,16 +33,17 @@ export function HelpKeys({ mac, onPlatform }: { mac: boolean; onPlatform(mac: bo
   );
 }
 
+// Keycaps as in Settings › Shortcuts (settings-ui.tsx `KeyCombo`); the row edge from dialog-fills.ts.
 const row = style({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  gap: 12,
-  paddingY: 12,
+  gap: 16,
+  paddingY: 8,
   borderWidth: 0,
   borderBottomWidth: 1,
   borderStyle: 'solid',
-  borderColor: 'gray-200',
   font: 'ui-sm',
   color: 'gray-800',
 });
+const name = style({ minWidth: 0 });

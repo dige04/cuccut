@@ -98,7 +98,7 @@ export function SubtitleEmpty({
   }
 
   return (
-    <div className={`${scroller} bc-scroll`}>
+    <div className={`${scroller} cc-scroll`}>
       <div className={centered}>
         <span className={emptyIcon}>
           <CloseCaptions />

@@ -349,7 +349,7 @@ function DubSetupPage({
     <>
       <PanelHead title={C.title} back={{ label: C.back, onPress: onBack }} />
       {live ? <DubRunHead live={live} /> : null}
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <DubNotices videoId={videoId} videoName={videoName} speakerNames={speakerNames} flush />
         {languageLabel ? <p className={summary}>{C.summary(languageLabel, sentenceCount, needTranslate)}</p> : null}
 

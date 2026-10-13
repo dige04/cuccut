@@ -38,7 +38,7 @@ export function ImageLightbox({
   }, []);
   return (
     <DialogContainer onDismiss={onClose}>
-      <CustomDialog size="fullscreenTakeover" padding="none" aria-label={current.name} UNSAFE_className={`${mediaTheme} bc-image-lightbox`}>
+      <CustomDialog size="fullscreenTakeover" padding="none" aria-label={current.name} UNSAFE_className={`${mediaTheme} cc-image-lightbox`}>
         <ResolvedImage
           candidate={current}
           files={
@@ -96,7 +96,7 @@ function ResolvedImage({
   }, [runtime, key, candidate.handle]);
   if (error || !handle)
     return (
-      <div className="bc-media-error">
+      <div className="cc-media-error">
         {error ? M.unavailable : <ProgressCircle isIndeterminate aria-label={M.image} />}
         <ActionButton onPress={onClose}>{M.cancel}</ActionButton>
       </div>
@@ -156,13 +156,13 @@ export function InlineImageGallery({
   };
   return (
     <>
-      <span className={`${mediaTheme} bc-inline-images`} style={{ '--inline-image-height': `${height}px` } as React.CSSProperties}>
-        <span ref={ref} className="bc-inline-image-main">
+      <span className={`${mediaTheme} cc-inline-images`} style={{ '--inline-image-height': `${height}px` } as React.CSSProperties}>
+        <span ref={ref} className="cc-inline-image-main">
           <ActionButton aria-label={`${M.image}: ${current.name}`} onPress={() => open('focused')}>
             <img src={current.handle?.url} alt={current.name} />
           </ActionButton>
           {files.length > 1 && (
-            <ActionButton size="XS" UNSAFE_className="bc-inline-canvas" onPress={() => open('canvas')}>
+            <ActionButton size="XS" UNSAFE_className="cc-inline-canvas" onPress={() => open('canvas')}>
               {M.canvasView}
             </ActionButton>
           )}

@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const ru: StageBarMessages = {
-  bar: 'Управление предпросмотром',
   ratio: 'Соотношение сторон',
   ratioReadOnly: 'Соотношение сторон · видео только для чтения',
   ratioApplied: (ratio: string) => `Соотношение сторон изменено на ${ratio}`,

@@ -27,7 +27,6 @@ import {
   InsertTextMenuItem,
   PromptField,
   PromptFieldAttachmentList,
-  PromptFieldSubmitButton,
   PromptFieldToolbar,
   PromptTokenField,
   type PromptFieldAttachment,
@@ -76,6 +75,7 @@ import Tools from '@react-spectrum/s2/icons/Tools';
 import Video from '@react-spectrum/s2/icons/Video';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { S } from './shell-copy.ts';
+import { COMPOSER_COPY } from './composer-copy.ts';
 import {
   AGENT_PICKER,
   ATTACHMENT_COPY,
@@ -386,7 +386,11 @@ export function Composer(props: ComposerProps) {
     !!designAnnotations ||
     !!designSystemAnnotations ||
     (!!start && start.canSendEmpty(images.length));
-  const canSend = (!busy || !!queueWhileBusy) && !sending && !picking && !uploading && !blocked && hasContent && !tool?.isDisabled;
+  const ready = (!busy || !!queueWhileBusy) && !sending && !picking && !uploading && !blocked && !tool?.isDisabled;
+  const canSend = ready && hasContent;
+  // agentcut keeps Send at full tint while the prompt is only empty: pressing it then puts the caret in the field
+  // instead of greying the view's one primary action out with no reason given.
+  const waitsForText = ready && !hasContent;
   const [over, setOver] = useState(false);
   const dragDepth = useRef(0);
 
@@ -640,26 +644,38 @@ export function Composer(props: ComposerProps) {
     ];
   };
 
-  // PromptFieldSubmitButton 只在它能动作时出现；停不了、发不了的时候换成同样外观的禁用钮（原型 ui.jsx）。
-  const submit = busy ? (
-    onStop && connected && !stopping ? (
-      <PromptFieldSubmitButton />
-    ) : (
-      <Button variant="primary" size="S" isDisabled aria-label={stopping ? S.composer.stopping : S.composer.stop}>
-        <StopProcessing />
-      </Button>
-    )
-  ) : blocked || sending || uploading ? (
-    <Button variant="primary" size="S" isDisabled aria-label={S.composer.send}>
-      <ArrowUpSend />
-    </Button>
-  ) : !hasText ? (
-    // PromptFieldSubmitButton 在正文空着时总是禁用；只附了图片、文件或素材也要能发。
-    <Button variant="primary" size="S" isDisabled={!canSend} aria-label={S.composer.send} onPress={() => void send()}>
-      <ArrowUpSend />
-    </Button>
-  ) : (
-    <PromptFieldSubmitButton />
+  // agentcut's PromptComposer: Send is the one yellow capsule of the view; while a run is going, a neutral Stop sits
+  // before it, and Send stays only when a message can be queued. Narrow composers keep the icons and drop the words.
+  const stopLabel = stopping ? S.composer.stopping : S.composer.stop;
+  // While a run is going the message waits its turn: agentcut names that button "Queue".
+  const sendLabel = busy ? COMPOSER_COPY.queue : S.composer.send;
+  const submit = (
+    <>
+      {busy ? (
+        <Button
+          variant="secondary"
+          size="M"
+          UNSAFE_className="cc-composer-send"
+          isDisabled={!onStop || !connected || !!stopping}
+          aria-label={stopLabel}
+          onPress={() => onStop?.()}>
+          <StopProcessing />
+          {compact ? null : <Text>{stopLabel}</Text>}
+        </Button>
+      ) : null}
+      {!busy || queueWhileBusy ? (
+        <Button
+          variant="accent"
+          size="M"
+          UNSAFE_className="cc-composer-send"
+          isDisabled={!canSend && !waitsForText}
+          aria-label={sendLabel}
+          onPress={() => (waitsForText ? focusPromptEnd(ref.current?.UNSAFE_getDOMNode()) : void send())}>
+          {busy ? <ListBulleted /> : <ArrowUpSend />}
+          {compact ? null : <Text>{sendLabel}</Text>}
+        </Button>
+      ) : null}
+    </>
   );
 
   const attachments: PromptFieldAttachment[] = images.map((image) => ({ id: image.id, file: image.file, image: image.url }));
@@ -737,7 +753,7 @@ export function Composer(props: ComposerProps) {
   // product-design §3.2.3：两个输入区共用同一个附件首项；已有内容继续通过 @ 补全引用。
   const insert = (
     <MenuTrigger align="start" direction="top" onOpenChange={onInsertOpen}>
-      <ActionButton isQuiet size="S" aria-label={COMPOSER_MENU.attachSection}>
+      <ActionButton size="S" UNSAFE_className="cc-composer-attach" aria-label={COMPOSER_MENU.attachSection}>
         <Add />
       </ActionButton>
       <Menu

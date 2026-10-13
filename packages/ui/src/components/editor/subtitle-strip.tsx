@@ -281,12 +281,11 @@ export function SubtitleStrip({
       toastUndo(C.flipped(!translationFirst), receipt);
     }
   };
-  /** 入口卡：选中当下这条字幕的实例，侧栏随之切到属性页（字幕样式）。 */
+  /** 入口卡：选中当下这条字幕的实例，检查器随之显示它的属性（字幕样式）。 */
   const openStyle = () => {
     const itemId = current?.itemIds[0];
     if (!itemId) return;
     useEditor.getState().select([itemId]);
-    useEditor.getState().showPanel('props');
   };
 
   return (

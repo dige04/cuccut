@@ -77,11 +77,11 @@ function textOf(node: unknown): string {
 function CodeBlock({ code }: { code: string }) {
   const body = code.replace(/\n+$/, '');
   return (
-    <div className="bc-amd-pre">
+    <div className="cc-amd-pre">
       <pre tabIndex={0}>
         <code>{body}</code>
       </pre>
-      <span className="bc-amd-pre__copy">
+      <span className="cc-amd-pre__copy">
         <CopyButton text={body} label={T.copyCode} />
       </span>
     </div>
@@ -99,7 +99,7 @@ function PathLink({ raw, token }: { raw: string; token: PathToken }) {
       <ActionButton
         isQuiet
         size="XS"
-        UNSAFE_className="bc-amd-path"
+        UNSAFE_className="cc-amd-path"
         onPress={() => openMarkdownPath(path, scope, runtime)}>
         {raw}
       </ActionButton>
@@ -117,7 +117,7 @@ function MarkdownLink({ href, children, title }: { href?: string; children?: Rea
     const hit = runtime.host.platform !== 'web' ? settingsLink(href) : null;
     if (!hit) return <span>{children}</span>;
     return <TooltipTrigger delay={400}>
-      <Link href={href} UNSAFE_className="bc-amd-settings">
+      <Link href={href} UNSAFE_className="cc-amd-settings">
         <Settings />{children}
       </Link>
       <Tooltip>{hit.trail}</Tooltip>
@@ -152,10 +152,10 @@ const components: Components = {
   code: ({ children }) => {
     const raw = String(children ?? '');
     const token = parsePathToken(raw);
-    return token ? <PathLink raw={raw} token={token} /> : <code className="bc-amd-code">{children}</code>;
+    return token ? <PathLink raw={raw} token={token} /> : <code className="cc-amd-code">{children}</code>;
   },
   table: ({ children }) => (
-    <div className="bc-amd-table">
+    <div className="cc-amd-table">
       <table>{children}</table>
     </div>
   ),
@@ -164,7 +164,7 @@ const components: Components = {
 /** 一块 Markdown：文字不变就不重渲。 */
 const MarkdownBlock = memo(function MarkdownBlock({ src, gap }: { src: string; gap: number }) {
   return (
-    <div className="bc-amd-block" style={gap ? { marginTop: gap } : undefined}>
+    <div className="cc-amd-block" style={gap ? { marginTop: gap } : undefined}>
       <Markdown remarkPlugins={remarkPlugins} components={components}
         urlTransform={(url, key) => (key === 'href' || key === 'src') && markdownFilePath(url) ? url : defaultUrlTransform(url)}>
         {src}
@@ -192,7 +192,7 @@ export function AgentMarkdown({
   const gap = gapBetween('block', 'block');
   return (
     <PathScope.Provider value={scope}>
-      <div className="bc-amd">
+      <div className="cc-amd">
         {blocks.map((src, i) => (
           <MediaBlock.Provider key={i} value={i}><MarkdownBlock src={src} gap={i ? gap : 0} /></MediaBlock.Provider>
         ))}

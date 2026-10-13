@@ -15,7 +15,6 @@ import {
 import Add from '@react-spectrum/s2/icons/Add';
 import ChevronDown from '@react-spectrum/s2/icons/ChevronDown';
 import ChevronRight from '@react-spectrum/s2/icons/ChevronRight';
-import AddCircle from '@react-spectrum/s2/icons/AddCircle';
 import Folder from '@react-spectrum/s2/icons/Folder';
 import FolderOpen from '@react-spectrum/s2/icons/FolderOpen';
 import More from '@react-spectrum/s2/icons/More';
@@ -30,13 +29,21 @@ import { useDirectory } from '../state/directory-store.ts';
 import { HOME, hrefFor, useShell } from '../state/shell-store.ts';
 import { conversationItem, ProjectItem, type ConversationRowActions } from './home-sidebar-rows.tsx';
 import { NameDialog } from './name-dialog.tsx';
-import { PageSidebar, SidebarTitle, sidebarBody, useSidebarGo, useSidebarRoute } from './page-sidebar.tsx';
+import { Plus } from 'lucide-react';
+import { cn } from 'cn';
+import { Button } from '../cc/ui/button.tsx';
+import { SESSION_COPY } from './session/session-copy.ts';
 import { useNow } from './use-now.ts';
 
-const top = style({ display: 'flex', alignItems: 'center', paddingBottom: 16 });
 const head = style({ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, width: 'full', height: 24, marginY: -4 });
 const headLabel = style({ display: 'flex', alignItems: 'center', gap: 4, font: 'ui-sm', fontWeight: 'normal', color: 'gray-600' });
 const empty = style({ font: 'ui-sm', color: 'gray-600', paddingX: 8, marginTop: 8, marginBottom: 0 });
+/**
+ * The drawer card (agentcut ProjectList, as a solid surface beside the session): the rows' hover and current fills
+ * are white at low alpha (read by the `[data-cc-row]` rules in app.css).
+ */
+const drawer =
+  'flex w-72 shrink-0 flex-col overflow-hidden rounded-3xl border border-border/60 bg-card p-3 [--cc-row-current:rgb(255_255_255/0.1)] [--cc-row-hover:rgb(255_255_255/0.05)]';
 /** S2 的 SideNav 默认撑满父级高度；下面还有空列表提示，按内容高度排，滚动交给外层。 */
 const nav = style({ height: 'auto' });
 
@@ -44,15 +51,14 @@ type DialogState = { kind: 'new-project' } | { kind: 'rename-project'; project: 
 type SectionKey = 'pinned' | 'projects' | 'recent';
 
 /**
- * Home 的页面侧栏（产品设计 §3.1，用户修订）：区域标题、新建会话；置顶、项目、最近三段，段头可折叠。
- * 搜索与通知按用户反馈暂时移除。项目段头的「⋯」整理侧栏（按项目分组 / 在一个列表中）与会话排序，
- * 「+」新建项目或打开已有目录。
+ * The sessions list in the session layout's drawer (session/sessions-drawer.tsx places it inline or over the content):
+ * a heading and New session, then pinned, projects and recent, each section collapsible. The projects section's ⋯
+ * organises the list (by project / one list) and sorts sessions; its + creates a project or opens a folder.
  */
-export function HomeSidebar() {
+export function HomeSidebar({ className }: { className?: string }) {
   const runtime = useRuntime();
-  const route = useSidebarRoute();
-  // 在浮层里先关浮层再跳：点的就是当前位置（例如已在新会话页时点新建会话）也关。
-  const go = useSidebarGo();
+  const route = useShell((s) => s.route);
+  const go = useShell((s) => s.go);
   const expanded = useShell((s) => s.expandedProjects);
   const setExpanded = useShell((s) => s.setExpandedProjects);
   const grouping = useShell((s) => s.sidebarGrouping);
@@ -148,20 +154,19 @@ export function HomeSidebar() {
   const listEmpty = flat ? !tree.flat.length : !tree.projects.length;
 
   return (
-    <PageSidebar label={S.sidebar.sessions}>
-      <SidebarTitle>CucCut</SidebarTitle>
-      <div className={top}>
-        <ActionButton
-          isQuiet
-          styles={style({ width: 'full' })}
-          UNSAFE_style={{ justifyContent: 'start' }}
-          onPress={() => go({ tab: 'home', conversationId: null, projectId: null })}>
-          <AddCircle />
-          <Text>{S.common.newSession}</Text>
-        </ActionButton>
+    <aside className={cn(drawer, className)} aria-label={S.sidebar.sessions}>
+      <div data-cc className="flex shrink-0 flex-col gap-3 px-1 pt-1 pb-3">
+        <div className="px-1">
+          <h2 className="text-base font-semibold text-foreground">{S.sidebar.sessions}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{SESSION_COPY.sessionsBlurb}</p>
+        </div>
+        <Button data-drawer-focus variant="outline" size="sm" className="justify-start" onClick={() => go({ tab: 'home', conversationId: null, projectId: null })}>
+          <Plus />
+          {S.common.newSession}
+        </Button>
       </div>
 
-      <div className={`${sidebarBody} bc-scroll`}>
+      <div className="cc-scroll -mx-1 min-h-0 flex-1 overflow-y-auto border-t border-border/60 px-1 pt-2">
         <SideNav
           styles={nav}
           aria-label={S.sidebar.projectsAndSessions}
@@ -255,7 +260,7 @@ export function HomeSidebar() {
           }}
         />
       ) : null}
-    </PageSidebar>
+    </aside>
   );
 }
 
@@ -266,7 +271,7 @@ export function HomeSidebar() {
 function SectionHead({ label, collapsed, onToggle, children }: { label: string; collapsed: boolean; onToggle: () => void; children?: ReactNode }) {
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   return (
-    <span className={`${head} bc-section-head`} onFocus={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+    <span className={`${head} cc-section-head`} onFocus={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
       <ActionButton
         isQuiet
         size="S"
@@ -274,18 +279,18 @@ function SectionHead({ label, collapsed, onToggle, children }: { label: string; 
         aria-expanded={!collapsed}
         styles={style({ flexGrow: 1, minWidth: 0, marginStart: -8 })}
         UNSAFE_style={{ justifyContent: 'start' }}
-        UNSAFE_className="bc-section-toggle"
+        UNSAFE_className="cc-section-toggle"
         onPress={onToggle}>
         <Text>
           <span className={headLabel}>
             {label}
-            <span className="bc-section-chevron">
+            <span className="cc-section-chevron">
               <Chevron />
             </span>
           </span>
         </Text>
       </ActionButton>
-      {children ? <span className="bc-section-actions">{children}</span> : null}
+      {children ? <span className="cc-section-actions">{children}</span> : null}
     </span>
   );
 }

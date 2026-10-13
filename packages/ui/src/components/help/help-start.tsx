@@ -4,6 +4,7 @@ import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { Button as RACButton } from 'react-aria-components';
 import { HELP_COPY as COPY } from '../../copy.ts';
 import { HELP_GUIDES, HELP_MORE, quickStart, type HelpGuide } from '../../model/help-guides.ts';
+import { TILE_FILL } from './dialog-fills.ts';
 import { GuideIcon, GuideList, detail, eyebrow, kbd, sectionHeading, subTitle, textLink } from './help-guide-list.tsx';
 
 /**
@@ -29,7 +30,7 @@ export function HelpStart({ onRead, onChoose }: { onRead(guide: HelpGuide): void
       </div>
       <div className={path} role="group" aria-label={COPY.pathLabel(quick.length)}>
         {quick.map((guide, index) => (
-          <RACButton key={guide.id} className={(state) => card(state)} onPress={() => onRead(guide)}>
+          <RACButton key={guide.id} className={(state) => `${card(state)} ${TILE_FILL}`} onPress={() => onRead(guide)}>
             <span className={cardHead}>
               <span className={cardIcon}>
                 <GuideIcon icon={guide.icon} />
@@ -94,9 +95,8 @@ const card = style({
   paddingY: 16,
   borderWidth: 1,
   borderStyle: 'solid',
-  borderColor: { default: 'gray-200', isHovered: 'gray-400' },
-  borderRadius: 'lg',
-  backgroundColor: { default: 'gray-75', isHovered: 'gray-100' },
+  // Inside the dialog material: thin white fills rather than another surface (dialog-fills.ts `TILE_FILL`).
+  borderRadius: '[16px]',
   textAlign: 'start',
   cursor: 'pointer',
   outlineStyle: { default: 'none', isFocusVisible: 'solid' },

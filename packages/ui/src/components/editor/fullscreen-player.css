@@ -6,32 +6,32 @@
  * 几何照原型落在 S2 阶梯：内边距 24、行距 8、圆角 8 / 16 / pill、动效 150ms cubic-bezier(0.45, 0, 0.4, 1)。
  */
 
-.bc-fsp {
+.cc-fsp {
   cursor: default;
 }
 /* 收起时连指针一起收：不然黑画面上会一直浮着一支箭头。 */
-.bc-fsp[data-idle] {
+.cc-fsp[data-idle] {
   cursor: none;
 }
 
 /* chrome 铺满整幅画面（上下两条遮罩各占一头），自己不吃指针：吃了的话中间那一大片「点画面 = 播放 / 暂停」就失效了。
    只有控件条与键表收指针。 */
-.bc-fsp-chrome {
+.cc-fsp-chrome {
   position: absolute;
   inset: 0;
   pointer-events: none;
   opacity: 1;
   transition: opacity 150ms cubic-bezier(0.45, 0, 0.4, 1);
 }
-.bc-fsp[data-idle] .bc-fsp-chrome {
+.cc-fsp[data-idle] .cc-fsp-chrome {
   opacity: 0;
 }
 /* 看不见的控件条不许被点中。 */
-.bc-fsp[data-idle] .bc-fsp-bar {
+.cc-fsp[data-idle] .cc-fsp-bar {
   pointer-events: none;
 }
 
-.bc-fsp-top {
+.cc-fsp-top {
   position: absolute;
   inset: 0 0 auto 0;
   padding: 24px 24px 40px;
@@ -41,7 +41,7 @@
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
 }
 
-.bc-fsp-bar {
+.cc-fsp-bar {
   position: absolute;
   inset: auto 0 0 0;
   padding: 24px;
@@ -54,17 +54,17 @@
 
 /* ---------- 进度条 ---------- */
 
-.bc-fsp-seek {
+.cc-fsp-seek {
   width: 100%;
 }
-.bc-fsp-seek-track {
+.cc-fsp-seek-track {
   position: relative;
   height: 20px;
   display: flex;
   align-items: center;
   cursor: pointer;
 }
-.bc-fsp-seek-rail {
+.cc-fsp-seek-rail {
   position: relative;
   width: 100%;
   height: 4px;
@@ -72,17 +72,17 @@
   background: rgba(255, 255, 255, 0.28);
   transition: height 150ms cubic-bezier(0.45, 0, 0.4, 1);
 }
-.bc-fsp-seek-track:hover .bc-fsp-seek-rail,
-.bc-fsp-seek[data-active] .bc-fsp-seek-rail {
+.cc-fsp-seek-track:hover .cc-fsp-seek-rail,
+.cc-fsp-seek[data-active] .cc-fsp-seek-rail {
   height: 6px;
 }
-.bc-fsp-seek-fill {
+.cc-fsp-seek-fill {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 9999px;
 }
 /* 章节刻痕：进度条上的一道缝，首章的 0 不画（model/player `chapterTicks`）。 */
-.bc-fsp-seek-tick {
+.cc-fsp-seek-tick {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -91,7 +91,7 @@
   background: rgba(0, 0, 0, 0.56);
 }
 /* 拇指的位置与 translate 是 react-aria 内联给的，这里用独立的 `scale` 让它悬停、拖动、键盘聚焦时才长出来。 */
-.bc-fsp-seek-thumb {
+.cc-fsp-seek-thumb {
   top: 50%;
   width: 14px;
   height: 14px;
@@ -100,19 +100,19 @@
   scale: 0;
   transition: scale 150ms cubic-bezier(0.45, 0, 0.4, 1);
 }
-.bc-fsp-seek-track:hover .bc-fsp-seek-thumb,
-.bc-fsp-seek[data-active] .bc-fsp-seek-thumb,
-.bc-fsp-seek-thumb[data-focus-visible] {
+.cc-fsp-seek-track:hover .cc-fsp-seek-thumb,
+.cc-fsp-seek[data-active] .cc-fsp-seek-thumb,
+.cc-fsp-seek-thumb[data-focus-visible] {
   scale: 1;
 }
-.bc-fsp-seek-thumb[data-focus-visible] {
+.cc-fsp-seek-thumb[data-focus-visible] {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
 
 /* 悬停气泡：一格画面 + 松手会落到的时码 + 那一刻在哪一章。居中对准指针，片头片尾会探出条子一点——不夹：
    夹到边上就不再对准指针，而「它指着哪一帧」正是它存在的理由。 */
-.bc-fsp-bubble {
+.cc-fsp-bubble {
   position: absolute;
   bottom: 24px;
   transform: translateX(-50%);
@@ -127,7 +127,7 @@
   pointer-events: none;
   white-space: nowrap;
 }
-.bc-fsp-bubble-frame {
+.cc-fsp-bubble-frame {
   margin-bottom: 4px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08) center / cover no-repeat;
@@ -136,13 +136,13 @@
 
 /* ---------- 音量：钮常驻，滑杆悬停、聚焦或拖动时展开 ---------- */
 
-.bc-fsp-volume {
+.cc-fsp-volume {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 /* 滑杆 80px，两边各留 8px 给拇指探出去的半个身子与聚焦环（收着时整个裁掉）。 */
-.bc-fsp-volume-slider {
+.cc-fsp-volume-slider {
   display: flex;
   justify-content: center;
   width: 0;
@@ -150,15 +150,15 @@
   overflow: hidden;
   transition: width 150ms cubic-bezier(0.45, 0, 0.4, 1);
 }
-.bc-fsp-volume:hover .bc-fsp-volume-slider,
-.bc-fsp-volume:focus-within .bc-fsp-volume-slider,
-.bc-fsp-volume[data-dragging] .bc-fsp-volume-slider {
+.cc-fsp-volume:hover .cc-fsp-volume-slider,
+.cc-fsp-volume:focus-within .cc-fsp-volume-slider,
+.cc-fsp-volume[data-dragging] .cc-fsp-volume-slider {
   width: 96px;
 }
 
 /* ---------- 键表（`?`，控件行也有一枚钮）----------
    压在画面上而不是走 Dialog：全屏里再叠一层模态遮罩，等于把片子盖掉两次。点表外、Esc、再按一次 `?` 都关得掉。 */
-.bc-fsp-keys {
+.cc-fsp-keys {
   position: absolute;
   inset: 0;
   z-index: 2;
@@ -167,7 +167,7 @@
   justify-content: center;
   pointer-events: auto;
 }
-.bc-fsp-keys-card {
+.cc-fsp-keys-card {
   width: min(420px, calc(100% - 48px));
   max-height: 72%;
   overflow: auto;

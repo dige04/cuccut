@@ -56,7 +56,6 @@ export const ko: ElementsMessages = {
   tabBrand: '브랜드',
   tabProps: '속성',
   currentTool: '현재 편집 도구',
-  videoTools: '영상 편집 도구',
   resizePanel: '패널 크기 조정',
   added: (label: string, start: string, end: string) => `${label} 추가함 · ${start} → ${end}`,
   undo: '실행 취소',

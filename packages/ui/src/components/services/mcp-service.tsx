@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { localizeText, type Id, type McpConnectionInfo, type ServiceStatus } from '@cuccut/protocol';
-import { Badge, Button, Header, Heading, Link, Menu, MenuItem, MenuSection, MenuTrigger, Switch, Text } from '@react-spectrum/s2';
+import { Badge, Button, Header, Heading, Menu, MenuItem, MenuSection, MenuTrigger, Switch, Text } from '@react-spectrum/s2';
 import ChevronDown from '@react-spectrum/s2/icons/ChevronDown';
 import Copy from '@react-spectrum/s2/icons/Copy';
 import Refresh from '@react-spectrum/s2/icons/Refresh';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
+import { RouteLink } from '../../cc/components/page-chrome.tsx';
 import { SERVICE_COPY, SERVICES_PAGE_COPY } from '../../copy.ts';
 import { MCP_LEVELS, mcpScope, mcpSub, pickedScope, scopeVideos, levelTitle } from '../../model/services-mcp.ts';
 import { serviceBusy, serviceStateLabel } from '../../model/services.ts';
 import { useRuntime } from '../../runtime/context.tsx';
-import { useShell } from '../../state/shell-store.ts';
 import { useSpace } from '../../state/space-store.ts';
-import { UtilityPage } from '../utility-page.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
 import { McpTools } from './mcp-tools.tsx';
-import { detail, detailXs, lede, panel, ServiceCard } from './service-card.tsx';
+import { detail, detailXs, panel, ServiceCard } from './service-card.tsx';
 import { ServiceApprovals } from './service-approval-card.tsx';
 import { ServiceClients } from './service-clients.tsx';
 import {
@@ -47,11 +47,10 @@ const pickerBtn = style({ marginTop: 8 });
 const labelBlock = style({ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 16 });
 const labelFirst = style({ display: 'flex', flexDirection: 'column', gap: 4 });
 const labelText = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900' });
-const related = style({ margin: 0, marginTop: 24, maxWidth: '[640px]', font: 'ui-sm', color: 'gray-600' });
+const related = style({ margin: 0, marginTop: 24, font: 'ui-sm', color: 'gray-600' });
 const notice = style({ margin: 0, marginTop: 8, font: 'ui-xs', color: 'gray-600' });
 
 export function McpServicePage() {
-  const go = useShell((s) => s.go);
   const { status, ready, connected, state } = useServiceStatus('mcp');
   const flip = useFlipService('mcp');
   const entries = useSpace((s) => s.entries);
@@ -80,15 +79,16 @@ export function McpServicePage() {
   const usable = !!status && state !== 'unavailable';
 
   return (
-    <UtilityPage
+    <UtilityShell
       kind="services"
+      flow
+      blurb={MCP_COPY.lede}
       title={MCP_COPY.title}
       actions={
         <Badge size="S" fillStyle="subtle" variant="neutral">
           {copy.scope}
         </Badge>
       }>
-      <p className={lede}>{MCP_COPY.lede}</p>
       <ServiceCard
         id="mcp"
         state={state}
@@ -134,11 +134,12 @@ export function McpServicePage() {
 
       <p className={related}>
         {SERVICES_PAGE_COPY.mcpRelated}{' '}
-        <Link isStandalone isQuiet onPress={() => go({ tab: 'settings', section: 'skills' })}>
+        {/* A neutral inline link: the page's one yellow element is its Start action. */}
+        <RouteLink route={{ tab: 'settings', section: 'skills' }} className="rounded-sm text-foreground underline decoration-foreground/40 underline-offset-2 outline-none hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring">
           {SERVICES_PAGE_COPY.mcpRelatedLink}
-        </Link>
+        </RouteLink>
       </p>
-    </UtilityPage>
+    </UtilityShell>
   );
 }
 

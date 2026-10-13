@@ -75,7 +75,6 @@ import { OpacityRow, TimeSection, type ItemPageProps } from './inspector-section
 import { openItemReplace } from './item-replace.tsx';
 import { MOD_KEY, arrangeItem, deleteItems, detachAudio, duplicateItems, setItemEnabled } from './timeline-commands.ts';
 import { EDITOR_COPY as E } from './editor-copy.ts';
-import { ELEMENTS_COPY as EL } from './elements-copy.ts';
 import { INSPECTOR_COPY as IC } from './inspector-copy.ts';
 
 /**
@@ -151,8 +150,8 @@ export const TOOL_ICON: Partial<Record<ToolId, ComponentType>> = {
   'hide-subs': VisibilityOff,
 };
 
-/** 属性页所在的那一栏（side-panel 的 aria-label，跟着界面语言）。 */
-const panelSelector = () => `[aria-label="${EL.currentTool}"]`;
+/** The selection inspector (inspector-column.tsx), wherever it is mounted: the session's slot or the pane's own column. */
+const panelSelector = () => '[data-inspector]';
 
 /** 属性页里节头的标题（跟着界面语言）；`jump()` 传的是稳定的节 key。 */
 const SECTION_TITLES: Record<InspectorSection, () => string> = {
@@ -177,17 +176,16 @@ function sectionHead(panel: Element, section: InspectorSection): HTMLElement | n
 export function jumpToSection(itemId: Id, section: InspectorSection | null): void {
   const editor = useEditor.getState();
   if (editor.selection.length !== 1 || editor.selection[0] !== itemId) editor.select([itemId]);
-  editor.showPanel('props');
   let tries = 0;
   const seek = () => {
     const panel = document.querySelector(panelSelector());
     const head = panel && section ? sectionHead(panel, section) : null;
     if (head) return head.scrollIntoView({ block: 'start', behavior: 'smooth' });
     if (tries++ < 10) return void requestAnimationFrame(seek);
-    panel?.querySelector('.bc-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
+    panel?.querySelector('.cc-scroll')?.scrollTo({ top: 0, behavior: 'smooth' });
   };
   if (section) requestAnimationFrame(seek);
-  else requestAnimationFrame(() => document.querySelector(panelSelector())?.querySelector('.bc-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }));
+  else requestAnimationFrame(() => document.querySelector(panelSelector())?.querySelector('.cc-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }));
 }
 
 /** 开关类的格现在是不是开着（翻转、粗斜体、对齐）。 */

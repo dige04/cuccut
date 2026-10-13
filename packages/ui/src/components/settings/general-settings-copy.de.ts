@@ -5,11 +5,6 @@ export const de: GeneralSettingsMessages = {
   language: "Sprache",
   languageDesc: "Sofort wirksam; kein Neustart nötig.",
   languageSystem: (current: string) => `System (${current})`,
-  appearance: "Aussehen",
-  appearanceDesc: "Betrifft nur CucCut-Fenster auf diesem Computer.",
-  schemeSystem: "System",
-  schemeLight: "Hell",
-  schemeDark: "Dunkel",
 
   saveFailed: (message: string) => `Speichern fehlgeschlagen: ${message}`,
 

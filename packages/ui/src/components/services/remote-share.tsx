@@ -29,7 +29,7 @@ import { useFlipShare } from './use-share-status.ts';
  * OpenAI 兼容端点、「打开 CucCut 时自动开始共享」勾选（共享开着时 Runtime 启动就自动继续，写成页脚的一句事实）。
  */
 
-const note = style({ margin: 0, marginTop: 8, maxWidth: '[640px]', font: 'ui-sm', color: 'gray-600' });
+const note = style({ margin: 0, marginTop: 8, font: 'ui-sm', color: 'gray-600' });
 const footRight = style({ marginStart: 'auto', font: 'ui-xs', color: 'gray-600' });
 const fix = style({
   display: 'flex',
@@ -38,7 +38,7 @@ const fix = style({
   marginTop: 12,
   paddingX: 12,
   paddingY: 8,
-  borderRadius: 'default',
+  borderRadius: '[12px]',
   backgroundColor: 'gray-75',
 });
 const grow = style({ flexGrow: 1, minWidth: 0 });
@@ -64,7 +64,7 @@ const pairblk = style({
   marginBottom: 8,
   paddingX: 16,
   paddingY: 12,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   backgroundColor: 'gray-75',
   borderWidth: 1,
   borderStyle: 'solid',

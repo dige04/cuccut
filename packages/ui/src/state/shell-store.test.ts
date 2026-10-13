@@ -521,7 +521,12 @@ describe('本机界面状态的迁移', () => {
     expect(migrateShell({ views: [] }, 5)).toEqual({ draftAccessModes: {}, views: {} });
   });
 
-  it('读回 v3 的本机状态：原有的照用，新字段是空的，写回时是 v5', async () => {
+  it('v5 -> v6 forgets the old docked-sidebar choice', () => {
+    expect(migrateShell({ sidebarHidden: false }, 5)).toEqual({ draftAccessModes: {} });
+    expect(migrateShell({ sidebarHidden: false }, 6)).toEqual({ draftAccessModes: {}, sidebarHidden: false });
+  });
+
+  it('读回 v3 的本机状态：原有的照用，新字段是空的，写回时是 v6', async () => {
     localStorage.setItem(
       'cuccut.shell',
       JSON.stringify({ state: { drafts: { new: '草稿' }, draftAccessModes: { new: 'auto' }, sidebarWidth: 300 }, version: 3 }),
@@ -535,7 +540,9 @@ describe('本机界面状态的迁移', () => {
     expect(s.queues).toEqual({});
     s.setDraftAgent('new', { driverId: 'claude', model: 'opus' });
     const saved = JSON.parse(localStorage.getItem('cuccut.shell')!) as { version: number; state: Record<string, unknown> };
-    expect(saved.version).toBe(5);
+    expect(saved.version).toBe(6);
+    // The sessions drawer starts closed after the move to the session layout.
+    expect(s.sidebarHidden).toBe(true);
     expect(saved.state.draftAgents).toEqual({ new: { driverId: 'claude', model: 'opus' } });
     expect(saved.state.views).toEqual({});
   });

@@ -7,7 +7,7 @@ import { useRuntime } from '../../runtime/context.tsx';
 import { useConnection } from '../../state/connection-store.ts';
 import { AGENT_COPY, MODEL_AUTO_UPDATE } from './agent-copy.ts';
 import { CommandBlock, ExecutableField, copyText } from './agent-command-block.tsx';
-import { Panel, SectionHeading, SettingRow } from './agent-panels.tsx';
+import { RowPanel, SettingsRow, SubHeading } from './settings-ui.tsx';
 import { diagnosticsText, isInstalled } from './agent-setup.ts';
 import { M } from './general-settings-copy.ts';
 
@@ -43,10 +43,10 @@ export function AgentAdvanced() {
 
   return (
     <>
-      <SectionHeading title={AGENT_COPY.advancedHeading} hint={AGENT_COPY.advancedHint} />
+      <SubHeading title={AGENT_COPY.advancedHeading} hint={AGENT_COPY.advancedHint} />
       {web ? <p className={webNote}>{M.webViewOnly}</p> : null}
-      <Panel label={AGENT_COPY.advancedHeading}>
-        <SettingRow label={MODEL_AUTO_UPDATE.label} desc={MODEL_AUTO_UPDATE.desc}>
+      <RowPanel label={AGENT_COPY.advancedHeading}>
+        <SettingsRow label={MODEL_AUTO_UPDATE.label} desc={MODEL_AUTO_UPDATE.desc}>
           <Switch
             aria-label={MODEL_AUTO_UPDATE.label}
             size="S"
@@ -54,11 +54,11 @@ export function AgentAdvanced() {
             isDisabled={web || !connected || !preferences || saving}
             onChange={(on) => void setAutoUpdate(on)}
           />
-        </SettingRow>
-      </Panel>
+        </SettingsRow>
+      </RowPanel>
 
       <div className={block}>
-        <Panel label={AGENT_COPY.techPanel}>
+        <RowPanel label={AGENT_COPY.techPanel}>
           <Disclosure isQuiet size="S">
             <DisclosureTitle>
               {AGENT_COPY.techTitle}
@@ -101,7 +101,7 @@ export function AgentAdvanced() {
               </div>
             </DisclosurePanel>
           </Disclosure>
-        </Panel>
+        </RowPanel>
       </div>
     </>
   );

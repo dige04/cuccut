@@ -57,7 +57,6 @@ export const ru: ElementsMessages = {
   tabBrand: "Бренд",
   tabProps: "Свойства",
   currentTool: "Текущий инструмент редактирования",
-  videoTools: "Инструменты редактирования видео",
   resizePanel: "Изменить размер панели",
   added: (label: string, start: string, end: string) => `Добавлено: ${label} · ${start} → ${end}`,
   undo: "Отменить",

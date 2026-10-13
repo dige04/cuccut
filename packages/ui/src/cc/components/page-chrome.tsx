@@ -202,7 +202,7 @@ export function BackHeader({
 export function PageScroll({ children, className, width = 'max-w-6xl' }: { children: ReactNode; className?: string; width?: string }) {
   return (
     <div className="cc-scroll relative min-h-0 flex-1 overflow-y-auto">
-      <div className={cn('mx-auto flex w-full flex-col gap-6 px-4 pt-4 pb-14 sm:px-6', width, className)}>{children}</div>
+      <div className={cn('mx-auto box-border flex w-full flex-col gap-6 px-4 pt-4 pb-14 sm:px-6', width, className)}>{children}</div>
     </div>
   );
 }
@@ -243,7 +243,7 @@ export interface RailGroup {
 export function PageRail({ label, groups, footer, className }: { label: string; groups: RailGroup[]; footer?: ReactNode; className?: string }) {
   return (
     <nav data-cc aria-label={label} className={cn('md:w-56 md:shrink-0', className)}>
-      <div className="flex flex-wrap gap-1.5 md:sticky md:top-24 md:flex-col md:gap-3">
+      <div className="flex flex-wrap gap-1.5 md:sticky md:top-24 md:flex-col md:flex-nowrap md:gap-3">
         {groups.map((group) => (
           <div key={group.key} className="contents md:flex md:flex-col md:gap-0.5">
             {group.label ? (
@@ -295,7 +295,7 @@ export function RailPage({ header, rail, children, fill = false }: {
 }) {
   if (fill) {
     return (
-      <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-4 pb-4 sm:px-6">
+      <div className="mx-auto box-border flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-6 px-4 pt-4 pb-4 sm:px-6">
         {header}
         <div className="flex min-h-0 flex-1 flex-col gap-6 md:flex-row md:gap-10">
           {rail}
@@ -318,7 +318,7 @@ export function RailPage({ header, rail, children, fill = false }: {
 /** A page section title with its one-line blurb and actions (agentcut settings `SectionHeader`). */
 export function SectionHeader({ title, blurb, actions }: { title: ReactNode; blurb?: ReactNode; actions?: ReactNode }) {
   return (
-    <div data-cc className="flex flex-wrap items-end justify-between gap-3">
+    <div data-cc className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 flex-col gap-1">
         <h2 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">{title}</h2>
         {blurb ? <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">{blurb}</p> : null}

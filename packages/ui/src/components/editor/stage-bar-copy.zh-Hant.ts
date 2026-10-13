@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const zhHant: StageBarMessages = {
-  bar: '預覽控制項',
   ratio: '長寬比',
   ratioReadOnly: '長寬比 · 影片為唯讀',
   ratioApplied: (ratio: string) => `長寬比已改為 ${ratio}`,

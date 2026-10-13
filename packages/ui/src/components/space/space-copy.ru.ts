@@ -5,7 +5,7 @@ import type { SpaceMessages } from './space-copy.ts';
 const files = (n: number) => pluralForm('ru', n, { one: `${n} файл`, few: `${n} файла`, many: `${n} файлов`, other: `${n} файла` });
 export const ru: SpaceMessages = {
   searchPlaceholder: "Поиск имён, файлов и речи в видео",
-  searchLabel: "Поиск в Space",
+  searchLabel: "Поиск в Библиотеке",
 
   openVideo: "Открыть видео",
   viewInfo: "Показать сведения",
@@ -126,7 +126,7 @@ export const ru: SpaceMessages = {
 
   trashVideoTitle: "Удалить видео?",
   trashVideoBody: "Вся папка видео перемещается в корзину проекта, можно восстановить. Исходные связанные материалы остаются.",
-  trashVideoRelated: (n: number) => `${pluralForm('ru', n, { one: `${n} элемент`, few: `${n} элемента`, many: `${n} элементов`, other: `${n} элемента` })}, экспортированные или созданные из видео, останутся в Space и не удалятся с ним:`,
+  trashVideoRelated: (n: number) => `${pluralForm('ru', n, { one: `${n} элемент`, few: `${n} элемента`, many: `${n} элементов`, other: `${n} элемента` })}, экспортированные или созданные из видео, останутся в Библиотеке и не удалятся с ним:`,
   trashVideoConfirm: "Удалить видео",
 
   purgeTitle: "Удалить навсегда?",
@@ -139,7 +139,7 @@ export const ru: SpaceMessages = {
 
   renameTitle: "Переименовать",
   renameLabel: "Отображаемое имя",
-  renameHint: (fileName: string) => `Меняет только имя в Space, файл не меняется. Оставьте пустым для возврата к «${fileName}".`,
+  renameHint: (fileName: string) => `Меняет только имя в Библиотеке, файл не меняется. Оставьте пустым для возврата к «${fileName}".`,
   save: "Сохранить",
 
   changedDialogTitle: "Исходное видео изменилось",
@@ -170,10 +170,10 @@ export const ru: SpaceMessages = {
   openForEdit: "Открыть для редактирования",
   newVideo: "Новое видео",
   revealUnavailable: "Файл вне папки проекта или сессии, нет места для показа",
-  sidebarLabel: "Категории Space",
+  sidebarLabel: "Категории Библиотеки",
   kindsHeader: "Категории",
   mineHeader: "Организовать",
-  sidebarNote: "Space показывает видео, материалы и результаты всех проектов. Файлы остаются в папках проектов. Файлы, экспортированные или созданные из видео, собраны вместе с ним; при просмотре по типам они показаны по отдельности.",
+  sidebarNote: "Библиотека показывает видео, материалы и результаты всех проектов. Файлы остаются в папках проектов. Файлы, экспортированные или созданные из видео, собраны вместе с ним; при просмотре по типам они показаны по отдельности.",
   all: "Все",
   emptyFiltered: "Нет подходящих элементов",
   emptyTrash: "Корзина пуста",
@@ -192,12 +192,12 @@ export const ru: SpaceMessages = {
   issuesTitle: (n: number) => pluralForm('ru', n, { one: `${n} папка показана не полностью`, few: `${n} папки показаны не полностью`, many: `${n} папок показаны не полностью`, other: `${n} папки показано не полностью` }),
   issueTruncated: (detail: string) => `Слишком много файлов, показана часть: ${detail}`,
   issueUnreadable: (detail: string) => `Не удалось прочитать: ${detail}`,
-  preparing: "Подготовка Space…",
+  preparing: "Подготовка Библиотеки…",
   preparingBody: "В первый раз папки проектов сканируются. Это займёт немного времени.",
   createIn: (project: string, hint: string) => `В «${project}" · ${hint}`,
   whichProjectFor: (label: string) => `${label}: какой проект`,
   entryActions: (name: string) => `Действия для «${name}"`,
-  entriesLabel: "Элементы Space",
+  entriesLabel: "Элементы Библиотеки",
   columnName: "Название",
   columnKind: "Тип",
   columnSource: "Источник",

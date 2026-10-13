@@ -16,7 +16,7 @@ import { useConnection } from '../../state/connection-store.ts';
 import { HOME, useShell } from '../../state/shell-store.ts';
 import { AgentCatalogSection } from './agent-catalog-section.tsx';
 import { AGENT_COPY, AGENT_FAQ, MORE_PROVIDERS, providersMeta } from './agent-copy.ts';
-import { Panel, SectionHeading } from './agent-panels.tsx';
+import { PANEL, PANEL_HOVER, RowPanel, SubHeading } from './settings-ui.tsx';
 import { AgentProviderCard } from './agent-provider-card.tsx';
 import { M } from './general-settings-copy.ts';
 import { agentOverview, groupDrivers, isInstalled, moreSummary, setupDoneToast } from './agent-setup.ts';
@@ -27,13 +27,7 @@ const status = style({
   alignItems: 'center',
   flexWrap: 'wrap',
   gap: 16,
-  marginTop: 24,
   padding: 20,
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: 'lg',
-  backgroundColor: 'layer-1',
 });
 const statusIcon = style({
   display: 'flex',
@@ -41,7 +35,7 @@ const statusIcon = style({
   justifyContent: 'center',
   flexShrink: 0,
   size: 40,
-  borderRadius: 'lg',
+  borderRadius: '[12px]',
   backgroundColor: { default: 'gray-100', isReady: 'green-200', isAttention: 'orange-200' },
   color: { default: 'gray-700', isReady: 'green-1000', isAttention: 'orange-1000' },
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
@@ -51,22 +45,17 @@ const statusTitle = style({ margin: 0, font: 'title-sm', color: 'gray-900' });
 const statusBody = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color: 'gray-700' });
 const empty = style({ padding: 20, font: 'ui-sm', color: 'gray-600' });
 /** 浏览器里为什么卡上的开关与按钮置灰：启停、检测、安装都要 Web 白名单之外的 `agents.*`；命令仍能复制。 */
-const webNote = style({ marginTop: 0, marginBottom: 12, font: 'ui-sm', color: 'gray-800' });
-const meta = style({ marginTop: 8, font: 'ui-xs', color: 'gray-600', textAlign: 'end' });
+const webNote = style({ margin: 0, font: 'ui-sm', color: 'gray-800' });
+const meta = style({ font: 'ui-xs', color: 'gray-600', textAlign: 'end' });
 // 「更多」折叠段的开关（settings-agent.css .agset-more）：一整条描边按钮，展开后下面再接一张同样的卡。
 const more = style({
   display: 'flex',
   alignItems: 'center',
   gap: 8,
   width: 'full',
-  marginTop: 8,
-  paddingX: 16,
+  paddingX: 20,
   paddingY: 12,
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: 'lg',
-  backgroundColor: { default: 'transparent', isHovered: 'gray-100' },
+  borderWidth: 0,
   font: 'ui-sm',
   color: 'gray-800',
   textAlign: 'start',
@@ -81,18 +70,11 @@ const moreText = style({ display: 'flex', flexDirection: 'column', gap: 4, flexG
 const moreTitle = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-900' });
 const moreSub = style({ font: 'ui-xs', color: 'gray-600' });
 const moreAct = style({ flexShrink: 0, font: 'ui-xs', color: 'gray-700' });
-const morePanel = style({ marginTop: 8 });
-const catalog = style({ marginTop: 28 });
-const faq = style({ marginTop: 28 });
+const catalog = style({ minWidth: 0 });
+const faq = style({ minWidth: 0 });
 // 常见问题一条一条之间一条分隔线，第一条上面不画（.agset-disclosure）。
-const faqItem = style({
-  paddingY: 4,
-  borderTopWidth: { default: 1, ':first-child': 0 },
-  borderXWidth: 0,
-  borderBottomWidth: 0,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-});
+// 一条一条之间的分隔线由面板画（settings-ui.tsx `RowPanel`）。
+const faqItem = style({ paddingY: 4 });
 const faqBody = style({ margin: 0, font: 'ui-sm', color: 'gray-700' });
 const faqLink = style({ marginTop: 8 });
 
@@ -165,7 +147,7 @@ export function AgentProviders() {
   return (
     <>
       {overview ? (
-        <section className={status} aria-label={AGENT_COPY.statusLabel}>
+        <section className={`${status} ${PANEL}`} aria-label={AGENT_COPY.statusLabel}>
           <span className={statusIcon({ isReady: overview.state === 'ready', isAttention: overview.state === 'attention' })} aria-hidden>
             {overview.state === 'ready' ? <CheckmarkCircle /> : overview.state === 'attention' ? <AlertTriangle /> : <Code />}
           </span>
@@ -181,7 +163,7 @@ export function AgentProviders() {
         </section>
       ) : null}
 
-      <SectionHeading
+      <SubHeading
         title={AGENT_COPY.providersHeading}
         hint={AGENT_COPY.providersHint}
         action={
@@ -191,11 +173,13 @@ export function AgentProviders() {
           </ActionButton>
         }
       />
+      {/* The note, the scan progress, the lists and the count sit close together under the heading. */}
+      <div className="flex min-w-0 flex-col gap-2">
       {web ? <p className={webNote}>{M.webViewOnly}</p> : null}
       {scanning || checking.length ? (
-        <ProgressBar aria-label={AGENT_COPY.scanProgress} isIndeterminate size="S" styles={style({ width: 'full', marginBottom: 8 })} />
+        <ProgressBar aria-label={AGENT_COPY.scanProgress} isIndeterminate size="S" styles={style({ width: 'full' })} />
       ) : null}
-      <Panel label={AGENT_COPY.providersHeading} flush>
+      <RowPanel label={AGENT_COPY.providersHeading} flush>
         {drivers === null || (groups.main.length === 0 && checking.length) ? (
           <div className={empty}>{connected ? AGENT_COPY.scanning : AGENT_COPY.emptyDisconnected}</div>
         ) : list.length === 0 ? (
@@ -213,10 +197,10 @@ export function AgentProviders() {
             />
           ))
         )}
-      </Panel>
+      </RowPanel>
       {groups.more.length ? (
         <>
-          <RACButton className={more} aria-expanded={showMore} aria-controls="agent-more-providers" onPress={() => setShowMore((v) => !v)}>
+          <RACButton className={`${more} ${PANEL_HOVER}`} aria-expanded={showMore} aria-controls="agent-more-providers" onPress={() => setShowMore((v) => !v)}>
             {showMore ? <ChevronDown /> : <ChevronRight />}
             <span className={moreText}>
               <span className={moreTitle}>{MORE_PROVIDERS.title(groups.more.length)}</span>
@@ -225,8 +209,8 @@ export function AgentProviders() {
             <span className={moreAct}>{showMore ? MORE_PROVIDERS.collapse : MORE_PROVIDERS.expand}</span>
           </RACButton>
           {showMore ? (
-            <div id="agent-more-providers" className={morePanel}>
-              <Panel label={MORE_PROVIDERS.title(groups.more.length)} flush>
+            <div id="agent-more-providers">
+              <RowPanel label={MORE_PROVIDERS.title(groups.more.length)} flush>
                 {groups.more.map((driver) => (
                   <AgentProviderCard
                     key={driver.id}
@@ -236,7 +220,7 @@ export function AgentProviders() {
                     onToggle={(open) => setExpanded(open ? driver.id : null)}
                   />
                 ))}
-              </Panel>
+              </RowPanel>
             </div>
           ) : null}
         </>
@@ -251,13 +235,14 @@ export function AgentProviders() {
           )}
         </div>
       ) : null}
+      </div>
 
       <div className={catalog}>
         <AgentCatalogSection onAdded={setExpanded} />
       </div>
 
       <div className={faq}>
-        <Panel label={AGENT_COPY.faqLabel}>
+        <RowPanel label={AGENT_COPY.faqLabel}>
           {AGENT_FAQ.map((item) => (
             <div key={item.key} className={faqItem}>
               <Disclosure isQuiet size="S">
@@ -281,7 +266,7 @@ export function AgentProviders() {
               </Disclosure>
             </div>
           ))}
-        </Panel>
+        </RowPanel>
       </div>
     </>
   );

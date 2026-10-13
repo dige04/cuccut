@@ -16,7 +16,7 @@ const card = style({
   flexDirection: 'column',
   gap: 8,
   padding: 16,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',

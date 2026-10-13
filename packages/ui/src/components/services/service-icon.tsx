@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react';
+import { Code as CodeLine, Globe, MonitorSmartphone, Plug, type LucideIcon } from 'lucide-react';
 import { createIcon } from '@react-spectrum/s2';
 import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle';
 import Code from '@react-spectrum/s2/icons/Code';
@@ -30,6 +31,9 @@ export const StopIcon = createIcon((props) => (
  * 模型接口原型里没有自己的图标（它是 Web 服务页的一节），用 S2 的 Code（接口）。出错时换成警告。
  */
 export const SERVICE_ICON = { mcp: McpIcon, remote: DeviceMultiscreen, web: GlobeGrid, 'model-api': Code } as const;
+
+/** The services in lucide, for the page chrome (the Services rail and overview cards). */
+export const SERVICE_RAIL_ICON: Record<ServiceId, LucideIcon> = { mcp: Plug, remote: MonitorSmartphone, web: Globe, 'model-api': CodeLine };
 
 export function ServiceIcon({
   id,

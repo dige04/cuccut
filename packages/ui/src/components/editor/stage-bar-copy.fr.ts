@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const fr: StageBarMessages = {
-  bar: 'Commandes de l’aperçu',
   ratio: 'Rapport hauteur/largeur',
   ratioReadOnly: 'Rapport hauteur/largeur · la vidéo est en lecture seule',
   ratioApplied: (ratio: string) => `Rapport hauteur/largeur passé à ${ratio}`,

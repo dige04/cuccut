@@ -52,7 +52,7 @@ export function DraftAttachmentPreview({
     );
   return (
     <DialogContainer onDismiss={onClose}>
-      <CustomDialog size="fullscreen" padding="none" aria-label={entry.file.name} UNSAFE_className={`${mediaTheme} bc-media-dialog`}>
+      <CustomDialog size="fullscreen" padding="none" aria-label={entry.file.name} UNSAFE_className={`${mediaTheme} cc-media-dialog`}>
         <header>
           <strong>{entry.file.name}</strong>
           <ActionButton onPress={onClose}>{M.cancel}</ActionButton>

@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const de: StageBarMessages = {
-  bar: 'Vorschausteuerung',
   ratio: 'Seitenverhältnis',
   ratioReadOnly: 'Seitenverhältnis · das Video ist schreibgeschützt',
   ratioApplied: (ratio: string) => `Seitenverhältnis auf ${ratio} geändert`,

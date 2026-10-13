@@ -71,7 +71,6 @@ const en = {
   tabBrand: 'Brand',
   tabProps: 'Properties',
   currentTool: 'Current editing tool',
-  videoTools: 'Video editing tools',
   resizePanel: 'Resize panel',
   added: (label: string, start: string, end: string) => `Added ${label} · ${start} → ${end}`,
   undo: 'Undo',

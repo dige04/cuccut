@@ -5,11 +5,6 @@ export const ptBR: GeneralSettingsMessages = {
   language: "Idioma",
   languageDesc: "Efeito imediato, sem reiniciar.",
   languageSystem: (current: string) => `Sistema (${current})`,
-  appearance: "Aparência",
-  appearanceDesc: "Só afeta janelas locais do CucCut.",
-  schemeSystem: "Sistema",
-  schemeLight: "Claro",
-  schemeDark: "Escuro",
 
   saveFailed: (message: string) => `Não foi possível salvar: ${message}`,
 

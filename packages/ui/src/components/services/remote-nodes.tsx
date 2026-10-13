@@ -54,7 +54,7 @@ const nodeCard = style({
   paddingX: 12,
   paddingY: 12,
   marginTop: 8,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   backgroundColor: 'gray-50',
   borderWidth: 1,
   borderStyle: 'solid',
@@ -71,13 +71,13 @@ const empty = style({
   paddingX: 16,
   paddingY: 16,
   marginTop: 8,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   borderWidth: 1,
   borderStyle: 'dashed',
   borderColor: 'gray-300',
 });
 const emptyTitle = style({ display: 'block', font: 'title-sm', color: 'gray-900' });
-const note = style({ margin: 0, marginTop: 8, maxWidth: '[640px]', font: 'ui-sm', color: 'gray-600' });
+const note = style({ margin: 0, marginTop: 8, font: 'ui-sm', color: 'gray-600' });
 const actionsRow = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 });
 const dialogBody = style({ display: 'flex', flexDirection: 'column', gap: 12 });
 const dialogError = style({ margin: 0, font: 'ui-sm', color: 'negative' });

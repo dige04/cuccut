@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const nl: StageBarMessages = {
-  bar: 'Voorvertoningsbediening',
   ratio: 'Beeldverhouding',
   ratioReadOnly: 'Beeldverhouding · de video is alleen-lezen',
   ratioApplied: (ratio: string) => `Beeldverhouding gewijzigd in ${ratio}`,

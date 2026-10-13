@@ -82,7 +82,7 @@ export function DocumentContent({ mode, fileName, text, source, target }: { mode
   const json = useMemo(() => mode === 'json' ? formatJson(text) : null, [mode, text]);
   if (source) return <SourcePreview text={text} />;
   if (mode === 'html') return <iframe title={fileName} sandbox="" referrerPolicy="no-referrer" srcDoc={html} style={{ display: 'block', width: '100%', height: '100%', minHeight: 480, border: 0, background: 'white' }} />;
-  if (mode === 'markdown') return <div className={`${document} bc-md`}><Markdown remarkPlugins={remarkPlugins} components={markdownComponents}>{text}</Markdown></div>;
+  if (mode === 'markdown') return <div className={`${document} cc-md`}><Markdown remarkPlugins={remarkPlugins} components={markdownComponents}>{text}</Markdown></div>;
   if (data && !data.error) {
     const columns = Math.max(0, ...data.rows.map(row => row.length));
     return <table className={table} aria-label={fileName}><thead className={head}><tr><th className={cell} aria-label="#">#</th>

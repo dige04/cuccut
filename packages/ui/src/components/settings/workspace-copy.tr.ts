@@ -1,0 +1,27 @@
+import type { WorkspaceMessages } from './workspace-copy.ts';
+
+export const tr: WorkspaceMessages = {
+  aside: 'Buradaki her şey tüm projeler için geçerlidir',
+  generalBlurb: 'CucCut’ın görünümü ve dili, indirmelerin kaydedildiği yer ve internetten neleri alabileceği.',
+  shortcutsBlurb: 'CucCut’ın her yerinde çalışan tuşlar. Düzenleyicinin kısayolları Yardım’da (F1).',
+  shortcutsPanel: 'CucCut’ın her yerinde',
+  fontsBlurb: 'Altyazı ve başlık yazı tipleri: nereden geldikleri ve bu bilgisayarda zaten bulunanlar.',
+  privacyBlurb: 'Bu bilgisayarda kalanlar, bulut sağlayıcılarına gönderilebilecekler ve ajanların sormadan yapabilecekleri.',
+  diagnosticsBlurb: 'Yerel Runtime, günlükleri ve arka plan işlerinin bu bilgisayarın ne kadarını kullanabileceği.',
+  aboutBlurb: 'Uygulama, arayüz ve Runtime sürümleri ile CucCut’ın nasıl güncellendiği.',
+  checking: 'Denetleniyor…',
+  noAgent: 'Hazır ajan yok',
+  shortcutCount: (n) => `${n} kısayol`,
+  skillCount: (n) => (n === 0 ? 'Henüz yok' : `${n} skill`),
+  glossaryCount: (n) => (n === 0 ? 'Henüz yok' : `${n} sözlük`),
+  grantCount: (n) => (n === 0 ? 'Etkin izin yok' : `${n} etkin izin`),
+  runtimeOn: 'Runtime bağlı',
+  runtimeOff: 'Runtime bağlı değil',
+  installed: (n) => (n === 0 ? 'Hiçbiri kurulu değil' : `${n} kurulu`),
+  noDefault: 'Henüz varsayılan yok',
+  version: (version) => `Sürüm ${version}`,
+  desktopOnly: 'Yalnızca masaüstü uygulamasında',
+  notYet: 'Henüz kullanılamıyor',
+  loadFailed: 'Yüklenemedi',
+  fontsSummary: 'Altyazılar ve başlıklar için',
+};

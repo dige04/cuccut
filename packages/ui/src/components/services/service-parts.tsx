@@ -21,8 +21,8 @@ import { copyText, useConfigureService } from './use-service-actions.ts';
  * `.svc__fix` / `.svc__port`，ui.css `.setrow`、`.agset-code`；page-services.jsx 的 `Row` 与「连接」「最近请求」块）。
  */
 
-const sec = style({ display: 'flex', alignItems: 'center', gap: 8, maxWidth: '[640px]', marginTop: 24 });
-const secTitle = style({ flexGrow: 1, margin: 0, font: 'ui-xs', fontWeight: 'bold', color: 'gray-600', letterSpacing: '[0.04em]' });
+const sec = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 28, paddingX: 4 });
+const secTitle = style({ flexGrow: 1, margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 
 /** 分节标题（原型 `.t-section.svc__sec`），右边可带一句状态。 */
 export function SectionHead({ title, aside }: { title: string; aside?: ReactNode }) {
@@ -89,7 +89,7 @@ const code = style({
   paddingStart: 12,
   paddingEnd: 4,
   paddingY: 4,
-  borderRadius: 'default',
+  borderRadius: '[12px]',
   backgroundColor: 'gray-75',
   borderWidth: 1,
   borderStyle: 'solid',
@@ -118,7 +118,7 @@ const pre = style({
   margin: 0,
   marginTop: 8,
   padding: 12,
-  borderRadius: 'default',
+  borderRadius: '[12px]',
   backgroundColor: 'gray-75',
   borderWidth: 1,
   borderStyle: 'solid',
@@ -220,7 +220,7 @@ const fix = style({
   marginTop: 12,
   paddingX: 12,
   paddingY: 8,
-  borderRadius: 'default',
+  borderRadius: '[12px]',
   backgroundColor: 'gray-75',
 });
 const grow = style({ flexGrow: 1, minWidth: 0 });
@@ -263,7 +263,7 @@ const levelOption = style({
   alignItems: 'start',
   gap: 2,
   padding: 12,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: { default: 'gray-300', isHovered: 'gray-400', isSelected: 'blue-900', isDisabled: 'gray-200' },

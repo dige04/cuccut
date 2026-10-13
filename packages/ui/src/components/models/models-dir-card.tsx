@@ -38,6 +38,7 @@ import { useModels } from '../../state/models-store.ts';
 import { useSetting } from '../../state/settings-store.ts';
 import { useShell } from '../../state/shell-store.ts';
 import { Chips } from './model-parts.tsx';
+import { PANEL } from '../settings/settings-ui.tsx';
 
 /*
  * 设置 › 本地模型 › 模型目录（架构设计 §6.3；设计稿 settings-models-dir.jsx / .css 的 .mdir）。各分类的本地模型页顶部共用：
@@ -49,13 +50,12 @@ const card = style({
   flexDirection: 'column',
   gap: 8,
   marginBottom: 20,
-  padding: 16,
-  borderRadius: 'lg',
-  backgroundColor: 'gray-75',
+  paddingX: 20,
+  paddingY: 16,
   minWidth: 0,
 });
 const head = style({ display: 'flex', alignItems: 'center', gap: 8 });
-const title = style({ margin: 0, fontSize: '[16px]', fontWeight: 'bold', lineHeight: '[22px]', color: 'gray-900' });
+const title = style({ margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
 const pathRow = style({
   display: 'flex',
   alignItems: 'center',
@@ -127,7 +127,7 @@ export function ModelsDirCard() {
   if (web) return null;
   if (!info) {
     return (
-      <section className={card} aria-label={COPY.title}>
+      <section className={`${card} ${PANEL}`} aria-label={COPY.title}>
         <h2 className={title}>{COPY.title}</h2>
         <p className={note({})} role="status">
           {failed ?? COPY.loading}
@@ -156,7 +156,7 @@ export function ModelsDirCard() {
   };
 
   return (
-    <section className={card} aria-label={COPY.title}>
+    <section className={`${card} ${PANEL}`} aria-label={COPY.title}>
       <div className={head}>
         <h2 className={title}>{COPY.title}</h2>
         {info.source === 'default' ? <Chips chips={[{ label: COPY.defaultChip, tone: 'neutral' }]} /> : null}

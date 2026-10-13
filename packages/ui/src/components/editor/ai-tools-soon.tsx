@@ -30,7 +30,7 @@ export function AiToolSoon({ tool, onBack }: { tool: AiTool; onBack(): void }) {
           {C.soon}
         </Badge>
       </PanelHead>
-      <div className={`${panelBody} bc-scroll`}>
+      <div className={`${panelBody} cc-scroll`}>
         <div className={card}>
           <span className={title}>{tool.name}</span>
           <span>{tool.desc}</span>

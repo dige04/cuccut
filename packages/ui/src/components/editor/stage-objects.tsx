@@ -497,7 +497,6 @@ export function StageObjects({ sequence, frame }: { sequence: Sequence; frame: F
         });
       if (captionGroup) click = () => select([hit]);
       else if (!current.includes(hit) || current.length > 1) select([hit]);
-      if (item?.type === 'caption') useEditor.getState().showPanel('props');
       // 铺满、cover、带裁剪的视频（剪成短视频的子视频）没有可挪的框：拖动是平移它的裁剪窗口，只改这一段。
       if (item && isPannable(item) && changeable(item)) gesture = panGesture(item, p, seq.canvas, assets);
       else if (item && isPlaced(item) && changeable(item)) gesture = { kind: 'move', member: memberOf(item, seq.canvas, assets), p0: p };

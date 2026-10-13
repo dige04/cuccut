@@ -34,7 +34,7 @@ const BACKDROPS = [
 ] as const;
 
 /**
- * 视频属性（没选中片段时）：画幅（短边不变，画面上的东西跟着画布按比例走，一步撤销）、画布底色，
+ * 视频属性（Video settings 对话框，video-settings.tsx）：画幅（短边不变，画面上的东西跟着画布按比例走，一步撤销）、画布底色，
  * 以及只读的规格。帧率与时长由视频决定，这里不改。
  */
 export function VideoPage({ sequence, assets }: { sequence: Sequence; assets: Record<Id, AssetRecord> }) {
@@ -100,7 +100,6 @@ export function VideoPage({ sequence, assets }: { sequence: Sequence; assets: Re
           {IC.contentsCount(sequence.tracks.length, sequence.items.length, Object.keys(assets).length)}
         </span>
       </div>
-      <Note>{IC.videoNote}</Note>
     </>
   );
 }

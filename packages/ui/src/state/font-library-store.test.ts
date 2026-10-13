@@ -276,12 +276,12 @@ describe('字体库的状态', () => {
     const register = async (name: string, bytes: ArrayBuffer) => void registered.push([name, bytes.byteLength]);
     await Promise.all(['Lobster', 'PingFang SC', 'Nowhere', 'Offline Font'].map((f) => requestSample(client, f, register)));
     expect(useFontLibrary.getState().samples).toEqual({
-      lobster: { state: 'ready', css: '"bc-sample-lobster"' },
+      lobster: { state: 'ready', css: '"cc-sample-lobster"' },
       'pingfang sc': { state: 'ready', css: '"PingFang SC"' },
       nowhere: { state: 'none' },
       'offline font': { state: 'none' },
     });
-    expect(registered).toEqual([['bc-sample-lobster', 4]]);
+    expect(registered).toEqual([['cc-sample-lobster', 4]]);
     expect(client.calls.map(([, p]) => p.family)).toEqual(['Lobster', 'Offline Font']);
   });
 });

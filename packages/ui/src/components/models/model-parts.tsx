@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Badge } from '@react-spectrum/s2';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import type { ModelChip } from '../../model/models-local.ts';
+import { PANEL } from '../settings/settings-ui.tsx';
 
 /*
  * 模型页几页共用的版式（设计稿 settings-cloud.css、settings-local.css、page-settings.css）：
@@ -30,20 +31,15 @@ export function Lede({ title, desc, action, first = false }: { title: string; de
 }
 
 const card = style({
-  paddingX: 16,
+  paddingX: 20,
   marginBottom: 8,
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: 'lg',
-  backgroundColor: 'layer-1',
   minWidth: 0,
 });
 
 /** 卡片层。 */
 export function Card({ label, children }: { label?: string; children: ReactNode }) {
   return (
-    <section className={card} aria-label={label}>
+    <section className={`${card} ${PANEL}`} aria-label={label}>
       {children}
     </section>
   );
@@ -102,7 +98,7 @@ const empty = style({
   borderWidth: 1,
   borderStyle: 'dashed',
   borderColor: 'gray-300',
-  borderRadius: 'lg',
+  borderRadius: '[24px]',
   textAlign: 'center',
 });
 const emptyIcon = style({ display: 'flex', color: 'gray-600', '--iconPrimary': { type: 'fill', value: 'currentColor' } });

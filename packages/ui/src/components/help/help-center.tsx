@@ -1,6 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { ActionButton, Button, CustomDialog, DialogContainer, SearchField, Tooltip, TooltipTrigger } from '@react-spectrum/s2';
-import Close from '@react-spectrum/s2/icons/Close';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { Button, SearchField, type TextFieldRef } from '@react-spectrum/s2';
 import HelpCircle from '@react-spectrum/s2/icons/HelpCircle';
 import InfoCircle from '@react-spectrum/s2/icons/InfoCircle';
 import ListBulleted from '@react-spectrum/s2/icons/ListBulleted';
@@ -9,12 +8,17 @@ import Search from '@react-spectrum/s2/icons/Search';
 import Transcript from '@react-spectrum/s2/icons/Transcript';
 import { iconStyle, style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { Button as RACButton } from 'react-aria-components';
+import { XIcon } from 'lucide-react';
+import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
+import { Dialog, DialogContent } from '../../cc/ui/dialog.tsx';
+import { Button as CcButton } from '../../cc/ui/button.tsx';
 import { HELP_COPY as COPY } from '../../copy.ts';
 import { HELP_GUIDES, helpCta, searchGuides, type HelpCta, type HelpGuide } from '../../model/help-guides.ts';
 import { useEditor } from '../../state/editor-store.ts';
 import { useHelp } from '../../state/help-store.ts';
 import { defaultRoute, routeVideo, useShell } from '../../state/shell-store.ts';
 import { openHome } from '../start/open-home.ts';
+import { EDGE, FOOT, INSET, NAV_FILL } from './dialog-fills.ts';
 import { HelpArticle } from './help-article.tsx';
 import { GuideList, detail, intro, kbd, sectionHeading, sectionTitle } from './help-guide-list.tsx';
 import { HelpKeys } from './help-keys.tsx';
@@ -30,13 +34,18 @@ const SECTIONS: readonly { id: Section; icon: typeof Play }[] = [
 ];
 
 /**
- * 帮助中心（原型 help-center.jsx / help-center.css）：S2 CustomDialog（L），挂在外壳一处，经 useHelp 开合。
- * 内容是内置的离线指南（model/help-guides.ts），不连网。
+ * 帮助中心（原型 help-center.jsx / help-center.css）：挂在外壳一处，经 useHelp 开合。内容是内置的离线指南
+ * （model/help-guides.ts），不连网。
+ *
+ * The surface is agentcut's dialog (cc/ui/dialog.tsx): near-black translucent material with a fine lit edge, 20px
+ * corners and a blurred dim backdrop; the footer sits on a darker strip. Esc, the close button and a click on the
+ * backdrop close it.
  */
 export function HelpCenter({ platform }: { platform: string }) {
   const isOpen = useHelp((s) => s.isOpen);
   const session = useHelp((s) => s.session);
   const close = useHelp((s) => s.close);
+  const searchRef = useRef<TextFieldRef>(null);
 
   // 焦点归还：S2 弹层（RAC FocusScope）关闭时自己把焦点还给打开前的元素；它没还成（比如来源在弹层开着时被换掉了）
   // 而且来源还在页面上时，这里补一次。
@@ -51,16 +60,21 @@ export function HelpCenter({ platform }: { platform: string }) {
     return () => window.clearTimeout(timer);
   }, [isOpen]);
 
-  // DialogContainer 关闭后仍留着上一个子元素（为了退场动画），HelpDialog 的状态会带到下一次打开；按打开次数换 key 重新开始。
+  // 每次打开按打开次数换 key 重新开始（上一次的分节、搜索与文章不带过来）。
   return (
-    <DialogContainer onDismiss={close}>
-      {isOpen ? <HelpDialog key={session} mac={platform === 'darwin'} onClose={close} /> : null}
-    </DialogContainer>
+    <Dialog open={isOpen} onOpenChange={(open) => (open ? undefined : close())}>
+      <DialogContent
+        showCloseButton={false}
+        // Land in the search field, as the Spectrum dialog did; fall back to the default (first tabbable) otherwise.
+        initialFocus={() => searchRef.current?.getInputElement() ?? true}
+        className="flex h-[min(716px,calc(100dvh-48px))] w-[min(860px,calc(100%-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(860px,calc(100%-2rem))]">
+        <HelpDialog key={session} mac={platform === 'darwin'} searchRef={searchRef} onClose={close} />
+      </DialogContent>
+    </Dialog>
   );
 }
 
-function HelpDialog({ mac: macDefault, onClose }: { mac: boolean; onClose(): void }) {
-  const titleId = useId();
+function HelpDialog({ mac: macDefault, searchRef, onClose }: { mac: boolean; searchRef: RefObject<TextFieldRef | null>; onClose(): void }) {
   const content = useRef<HTMLDivElement>(null);
   const [section, setSection] = useState<Section>('start');
   const [query, setQuery] = useState('');
@@ -99,124 +113,121 @@ function HelpDialog({ mac: macDefault, onClose }: { mac: boolean; onClose(): voi
   const sectionLabel = COPY.sections[section];
 
   return (
-    <CustomDialog size="L" padding="none" isDismissible aria-labelledby={titleId}>
-      <div className={shell}>
-        <header className={header}>
-          <span className={brand}>
-            <HelpCircle />
-            <h1 id={titleId} className={heading}>
-              {COPY.title}
-            </h1>
-          </span>
-          <span className={headerNote}>{COPY.subtitle}</span>
-          <TooltipTrigger>
-            <ActionButton isQuiet aria-label={COPY.close} onPress={onClose}>
-              <Close />
-            </ActionButton>
-            <Tooltip>{COPY.close}</Tooltip>
-          </TooltipTrigger>
-        </header>
-        <div className={layout}>
-          <nav className={nav} aria-label={COPY.navLabel}>
-            <div className={navTitle}>{COPY.navTitle}</div>
-            {SECTIONS.map(({ id, icon: Icon }) => {
-              const current = !searching && section === id;
-              return (
-                <RACButton
-                  key={id}
-                  className={(state) => navRow({ ...state, isCurrent: current })}
-                  aria-current={current ? 'page' : undefined}
-                  onPress={() => choose(id)}>
-                  <Icon styles={navIcon} />
-                  {COPY.sections[id]}
-                </RACButton>
-              );
-            })}
-            <div className={navNote}>
-              <InfoCircle styles={navIcon} />
-              <span>
-                {COPY.navNote[0]}
-                <br />
-                {COPY.navNote[1]}
-              </span>
-            </div>
-          </nav>
-          <div className={main}>
-            <div className={searchBar}>
-              <SearchField
-                size="L"
-                aria-label={COPY.searchLabel}
-                placeholder={COPY.searchPlaceholder}
-                value={query}
-                onChange={search}
-                onClear={() => search('')}
-                styles={searchField}
-              />
-            </div>
-            <div ref={content} className={`${body} cc-scroll`}>
-              {article ? (
-                <HelpArticle
-                  guide={article}
-                  backLabel={searching ? COPY.backToResults : COPY.backTo(sectionLabel)}
-                  cta={helpCta(article, inVideo)}
-                  onBack={() => setArticle(null)}
-                  onAction={() => act(helpCta(article, inVideo))}
-                  onRead={setArticle}
-                />
-              ) : searching ? (
-                <>
-                  <div className={sectionHeading}>
-                    <h2 className={sectionTitle}>{COPY.results}</h2>
-                    <span role="status" className={detail}>
-                      {COPY.found(listing.length)}
-                    </span>
-                  </div>
-                  {listing.length ? (
-                    <GuideList guides={listing} onRead={setArticle} />
-                  ) : (
-                    <div className={empty}>
-                      <Search styles={emptyIcon} data-cc-icons="own" />
-                      <h3 className={emptyTitle}>{COPY.emptyTitle}</h3>
-                      <p className={emptyBody}>{COPY.emptyBody}</p>
-                      <Button variant="secondary" onPress={() => choose('start')}>
-                        {COPY.emptyAction}
-                      </Button>
-                    </div>
-                  )}
-                </>
-              ) : section === 'start' ? (
-                <HelpStart onRead={setArticle} onChoose={choose} />
-              ) : section === 'keys' ? (
-                <HelpKeys mac={mac} onPlatform={setMac} />
-              ) : (
-                <>
-                  <div className={sectionHeading}>
-                    <h2 className={sectionTitle}>{section === 'guide' ? COPY.guideTitle : COPY.faqTitle}</h2>
-                  </div>
-                  <p className={intro}>{section === 'guide' ? COPY.guideIntro : COPY.faqIntro}</p>
-                  <GuideList guides={listing} onRead={setArticle} />
-                </>
-              )}
-            </div>
-            <footer className={footer}>
-              <span className={detail}>{COPY.footer}</span>
-              <span className={spacer} />
-              <kbd className={kbd}>Esc</kbd>
-              <span className={detail}>{COPY.close}</span>
-            </footer>
+    <div className={shell}>
+      <header className={`${header} ${EDGE}`}>
+        <span className={brand}>
+          <HelpCircle />
+          <DialogPrimitive.Title className={heading}>{COPY.title}</DialogPrimitive.Title>
+        </span>
+        <span className={headerNote}>{COPY.subtitle}</span>
+        {/* The dialog is portalled outside any `data-cc` subtree; the cc button needs the scoped preflight. */}
+        <span data-cc="" className="contents">
+          <CcButton variant="ghost" size="icon-sm" aria-label={COPY.close} title={COPY.close} onClick={onClose}>
+            <XIcon aria-hidden />
+          </CcButton>
+        </span>
+      </header>
+      <div className={layout}>
+        <nav className={`${nav} ${EDGE} ${INSET}`} aria-label={COPY.navLabel}>
+          <div className={navTitle}>{COPY.navTitle}</div>
+          {SECTIONS.map(({ id, icon: Icon }) => {
+            const current = !searching && section === id;
+            return (
+              <RACButton
+                key={id}
+                className={(state) => `${navRow({ ...state, isCurrent: current })} ${NAV_FILL}`}
+                aria-current={current ? 'page' : undefined}
+                onPress={() => choose(id)}>
+                <Icon styles={navIcon} />
+                {COPY.sections[id]}
+              </RACButton>
+            );
+          })}
+          <div className={navNote}>
+            <InfoCircle styles={navIcon} />
+            <span>
+              {COPY.navNote[0]}
+              <br />
+              {COPY.navNote[1]}
+            </span>
           </div>
+        </nav>
+        <div className={main}>
+          <div className={searchBar}>
+            <SearchField
+              ref={searchRef}
+              size="L"
+              aria-label={COPY.searchLabel}
+              placeholder={COPY.searchPlaceholder}
+              value={query}
+              onChange={search}
+              onClear={() => search('')}
+              styles={searchField}
+            />
+          </div>
+          <div ref={content} className={`${body} cc-scroll`}>
+            {article ? (
+              <HelpArticle
+                guide={article}
+                backLabel={searching ? COPY.backToResults : COPY.backTo(sectionLabel)}
+                cta={helpCta(article, inVideo)}
+                onBack={() => setArticle(null)}
+                onAction={() => act(helpCta(article, inVideo))}
+                onRead={setArticle}
+              />
+            ) : searching ? (
+              <>
+                <div className={sectionHeading}>
+                  <h2 className={sectionTitle}>{COPY.results}</h2>
+                  <span role="status" className={detail}>
+                    {COPY.found(listing.length)}
+                  </span>
+                </div>
+                {listing.length ? (
+                  <GuideList guides={listing} onRead={setArticle} />
+                ) : (
+                  <div className={empty}>
+                    <Search styles={emptyIcon} data-cc-icons="own" />
+                    <h3 className={emptyTitle}>{COPY.emptyTitle}</h3>
+                    <p className={emptyBody}>{COPY.emptyBody}</p>
+                    <Button variant="secondary" onPress={() => choose('start')}>
+                      {COPY.emptyAction}
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : section === 'start' ? (
+              <HelpStart onRead={setArticle} onChoose={choose} />
+            ) : section === 'keys' ? (
+              <HelpKeys mac={mac} onPlatform={setMac} />
+            ) : (
+              <>
+                <div className={sectionHeading}>
+                  <h2 className={sectionTitle}>{section === 'guide' ? COPY.guideTitle : COPY.faqTitle}</h2>
+                </div>
+                <p className={intro}>{section === 'guide' ? COPY.guideIntro : COPY.faqIntro}</p>
+                <GuideList guides={listing} onRead={setArticle} />
+              </>
+            )}
+          </div>
+          <footer className={`${footer} ${FOOT}`}>
+            <span className={detail}>{COPY.footer}</span>
+            <span className={spacer} />
+            <kbd className={kbd}>Esc</kbd>
+            <span className={detail}>{COPY.close}</span>
+          </footer>
         </div>
       </div>
-    </CustomDialog>
+    </div>
   );
 }
 
-/** 原型 .help-center：高 min(716px, 视口 − 48px)，不超出 S2 弹层的 90%；宽是 S2 的 L（原型 .cc-help-dialog 撑满它）。 */
+/** 原型 .help-center：填满对话框（高 min(716px, 视口 − 48px)）；底色是对话框自己的材质，这里不再铺一层。 */
 const shell = style({
   display: 'flex',
   flexDirection: 'column',
-  height: '[min(716px, calc(100dvh - 48px), 90dvh)]',
-  backgroundColor: 'gray-25',
+  flexGrow: 1,
+  minHeight: 0,
   fontFamily: 'sans',
   color: 'gray-800',
 });
@@ -231,10 +242,10 @@ const header = style({
   borderWidth: 0,
   borderBottomWidth: 1,
   borderStyle: 'solid',
-  borderColor: 'gray-200',
 });
 const brand = style({ display: 'flex', alignItems: 'center', gap: 8, flexGrow: 1, minWidth: 0, color: 'gray-900', '--iconPrimary': { type: 'fill', value: 'currentColor' } });
-const heading = style({ margin: 0, fontSize: 'ui-lg', fontWeight: 'extra-bold', color: 'gray-900' });
+// agentcut dialog titles are medium weight (cc `DialogTitle`).
+const heading = style({ margin: 0, fontSize: 'ui-lg', fontWeight: 'medium', color: 'gray-900' });
 const headerNote = style({ font: 'ui-sm', color: 'gray-600', whiteSpace: 'nowrap' });
 const layout = style({ display: 'flex', flexGrow: 1, minHeight: 0 });
 const nav = style({
@@ -246,15 +257,14 @@ const nav = style({
   paddingTop: { default: 24, '@media (max-width: 760px)': 20 },
   paddingBottom: { default: 16, '@media (max-width: 760px)': 20 },
   paddingX: { default: 12, '@media (max-width: 760px)': 8 },
-  backgroundColor: 'gray-75',
+  // Fill and edge come from dialog-fills.ts: a thin tint on the dialog material, never another layer of glass.
   borderWidth: 0,
   borderEndWidth: 1,
   borderStyle: 'solid',
-  borderColor: 'gray-200',
 });
 /** 原型 .t-section：11px 粗体灰字。 */
 const navTitle = style({ marginX: 12, marginBottom: 12, font: 'ui-xs', fontWeight: 'bold', color: 'gray-600' });
-/** 原型 .siderow：悬停 gray-100，当前 gray-200 加粗。 */
+/** 原型 .siderow, in agentcut's rail shape: 12px corners (a two-line label stays a card, not a lozenge); fills in dialog-fills.ts. */
 const navRow = style<{ isHovered: boolean; isFocusVisible: boolean; isCurrent: boolean }>({
   display: 'flex',
   alignItems: 'center',
@@ -263,13 +273,12 @@ const navRow = style<{ isHovered: boolean; isFocusVisible: boolean; isCurrent: b
   boxSizing: 'border-box',
   width: 'full',
   marginY: 2,
-  paddingX: 8,
-  paddingY: '[7px]',
+  paddingX: 12,
+  paddingY: 8,
   borderWidth: 0,
-  borderRadius: 'default',
-  backgroundColor: { default: 'transparent', isHovered: 'gray-100', isCurrent: 'gray-200' },
+  borderRadius: '[12px]',
   font: 'ui',
-  fontWeight: { default: 'normal', isCurrent: 'bold' },
+  fontWeight: { default: 'normal', isCurrent: 'medium' },
   color: { default: 'gray-800', isCurrent: 'gray-900' },
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
   textAlign: 'start',
@@ -319,6 +328,6 @@ const footer = style({
   borderWidth: 0,
   borderTopWidth: 1,
   borderStyle: 'solid',
-  borderColor: 'gray-200',
+  // agentcut dialog footer: a darker strip under a fine line (dialog-fills.ts `FOOT`).
 });
 const spacer = style({ flexGrow: 1 });

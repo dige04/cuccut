@@ -56,7 +56,6 @@ export const zhHant: ElementsMessages = {
   tabBrand: '品牌',
   tabProps: '屬性',
   currentTool: '目前的編輯工具',
-  videoTools: '影片編輯工具',
   resizePanel: '調整面板大小',
   added: (label: string, start: string, end: string) => `已新增${label} · ${start} → ${end}`,
   undo: '還原',

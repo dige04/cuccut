@@ -16,7 +16,7 @@ export function ImageEditPrompt({
   const [value, setValue] = usePromptValue(text, onText);
   return (
     <div
-      className="bc-image-prompt"
+      className="cc-image-prompt"
       onKeyDownCapture={(e) => {
         if (!text && (e.key === 'Home' || e.key === 'End')) {
           e.preventDefault();

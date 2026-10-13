@@ -119,7 +119,7 @@ export function TranscribeProgress({
           <Microphone />
         </span>
         <span className={title}>{assetName ? `${heading} · ${assetName}` : heading}</span>
-        {pct === null ? null : <span className={`${percent} bc-tabular`}>{pct}%</span>}
+        {pct === null ? null : <span className={`${percent} cc-tabular`}>{pct}%</span>}
       </div>
       <ProgressBar
         size="S"
@@ -130,7 +130,7 @@ export function TranscribeProgress({
       />
       {count || phase ? (
         <div className={meta}>
-          {count ? <span className="bc-tabular">{count}</span> : null}
+          {count ? <span className="cc-tabular">{count}</span> : null}
           {count && phase ? <span className={dot}>·</span> : null}
           {phase ? <span>{phase}</span> : null}
         </div>

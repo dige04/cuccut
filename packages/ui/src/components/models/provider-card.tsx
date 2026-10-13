@@ -19,17 +19,13 @@ import { probeSupported, probeVerdict, type ProbeState } from '../../model/model
 import { textModelLine } from '../../model/models-text.ts';
 import { useRuntime } from '../../runtime/context.tsx';
 import { CLOUD_COPY } from './models-copy.ts';
+import { PANEL } from '../settings/settings-ui.tsx';
 
 const card = style({
   marginBottom: 8,
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: 'lg',
-  backgroundColor: 'layer-1',
   minWidth: 0,
 });
-const head = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingX: 16, paddingY: 12 });
+const head = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, paddingX: 20, paddingY: 12 });
 const title = style({
   display: 'flex',
   alignItems: 'start',
@@ -199,7 +195,7 @@ export function ProviderCard({
   );
 
   return (
-    <section className={card} aria-label={provider.label}>
+    <section className={`${card} ${PANEL}`} aria-label={provider.label}>
       <div className={head}>
         {canOpen ? (
           <button

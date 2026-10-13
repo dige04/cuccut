@@ -43,5 +43,4 @@ export function openCaptionActive(item: CaptionItem): void {
   if (videoId) openGallery(videoId, false);
   useEditor.getState().select([item.id]);
   useCaptionSection.setState({ focus: 'active' });
-  useEditor.getState().showPanel('props');
 }

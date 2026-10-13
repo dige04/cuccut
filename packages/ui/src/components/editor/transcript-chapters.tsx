@@ -42,7 +42,7 @@ const head = style({
   paddingBottom: 2,
   paddingX: 12,
   marginX: -12,
-  backgroundColor: 'gray-25',
+  backgroundColor: 'gray-50',
   borderBottomWidth: 1,
   borderTopWidth: 0,
   borderStartWidth: 0,
@@ -260,7 +260,7 @@ export function TranscriptChapterHead({
       {chapter && draft === null ? (
         <button
           type="button"
-          className={`${range({ isHovered: hovered === 'range' })} bc-tabular`}
+          className={`${range({ isHovered: hovered === 'range' })} cc-tabular`}
           title={C.jump}
           onPointerEnter={() => setHovered('range')}
           onPointerLeave={() => setHovered(null)}

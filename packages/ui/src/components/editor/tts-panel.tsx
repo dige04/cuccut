@@ -173,7 +173,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
     return (
       <>
         {head}
-        <div className={`${body} bc-scroll`}>
+        <div className={`${body} cc-scroll`}>
           {stage === 'run' ? (
             <RunView title={title} job={job} all={jobs} view={view} />
           ) : job && stage === 'done' ? (
@@ -201,7 +201,7 @@ export function TtsPanel({ videoId, page, sequence, assets }: { videoId: Id; pag
   return (
     <>
       {head}
-      <div className={`${body} bc-scroll`} onKeyDown={submitOnModEnter(generate)}>
+      <div className={`${body} cc-scroll`} onKeyDown={submitOnModEnter(generate)}>
         {clone && myVoices && !myVoices.length ? (
           <div className={stack}>
             <Gate

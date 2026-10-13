@@ -1,0 +1,27 @@
+import type { WorkspaceMessages } from './workspace-copy.ts';
+
+export const zhHant: WorkspaceMessages = {
+  aside: '這裡的一切對所有專案生效',
+  generalBlurb: 'CucCut 的外觀與語言、下載存放的位置，以及它可以從網路取得哪些東西。',
+  shortcutsBlurb: '在 CucCut 任何地方都能用的按鍵。編輯器的快速鍵在說明（F1）裡。',
+  shortcutsPanel: '在 CucCut 任何地方',
+  fontsBlurb: '字幕與標題用的字型：從哪裡來，以及這台電腦上已經有的。',
+  privacyBlurb: '哪些留在這台電腦上，哪些可以傳給雲端服務商，以及 Agent 不用詢問就能做什麼。',
+  diagnosticsBlurb: '本機的 Runtime、它的記錄，以及背景工作可以使用這台電腦的多少資源。',
+  aboutBlurb: '應用程式、介面與 Runtime 的版本，以及 CucCut 如何更新。',
+  checking: '正在偵測…',
+  noAgent: '還沒有可用的 Agent',
+  shortcutCount: (n) => `${n} 個快速鍵`,
+  skillCount: (n) => (n === 0 ? '還沒有' : `${n} 個 Skill`),
+  glossaryCount: (n) => (n === 0 ? '還沒有' : `${n} 張術語表`),
+  grantCount: (n) => (n === 0 ? '沒有生效的授權' : `${n} 項授權生效中`),
+  runtimeOn: 'Runtime 已連線',
+  runtimeOff: 'Runtime 未連線',
+  installed: (n) => (n === 0 ? '還沒有安裝' : `已安裝 ${n} 個`),
+  noDefault: '還沒有預設',
+  version: (version) => `版本 ${version}`,
+  desktopOnly: '僅限桌面版',
+  notYet: '暫不可用',
+  loadFailed: '載入失敗',
+  fontsSummary: '用於字幕與標題',
+};

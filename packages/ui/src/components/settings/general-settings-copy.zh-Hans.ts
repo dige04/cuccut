@@ -5,11 +5,6 @@ export const zhHans: GeneralSettingsMessages = {
   language: '界面语言',
   languageDesc: '改完立即生效，不用重启。',
   languageSystem: (current: string) => `跟随系统（${current}）`,
-  appearance: '外观',
-  appearanceDesc: '只影响这台电脑上的 CucCut 窗口。',
-  schemeSystem: '跟随系统',
-  schemeLight: '浅色',
-  schemeDark: '深色',
 
   saveFailed: (message: string) => `没能保存：${message}`,
 

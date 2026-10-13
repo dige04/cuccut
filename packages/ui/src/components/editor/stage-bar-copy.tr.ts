@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const tr: StageBarMessages = {
-  bar: 'Önizleme denetimleri',
   ratio: 'En boy oranı',
   ratioReadOnly: 'En boy oranı · video salt okunur',
   ratioApplied: (ratio: string) => `En boy oranı ${ratio} olarak değiştirildi`,

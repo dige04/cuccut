@@ -21,7 +21,7 @@ export function GifControls({
 }) {
   if (gif.failed)
     return (
-      <div className="bc-media-error" role="status">
+      <div className="cc-media-error" role="status">
         {M.unavailable}
         <ActionButton onPress={gif.retry}>{M.retry}</ActionButton>
       </div>
@@ -29,7 +29,7 @@ export function GifControls({
   if (!gif.data) return <div role="status">{P.loading}</div>;
   const frame = gif.data.frames[view.frame] ?? gif.data.frames[0]!;
   return (
-    <div className="bc-gif-controls">
+    <div className="cc-gif-controls">
       <ActionButton onPress={() => update({ playing: !view.playing, sheet: false })}>{view.playing ? P.pause : P.play}</ActionButton>
       <ActionButton isDisabled={view.frame === 0} onPress={() => update({ frame: view.frame - 1, playing: false })}>
         {M.previous}

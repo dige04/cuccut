@@ -116,8 +116,8 @@ export function ImageMarkup({
     }
   };
   return (
-    <section className={`${mediaTheme} bc-image-markup`}>
-      <header className="bc-image-header">
+    <section className={`${mediaTheme} cc-image-markup`}>
+      <header className="cc-image-header">
         <strong>{mask ? M.erase : M.markup}</strong>
         <ActionButton onPress={onCancel}>{M.cancel}</ActionButton>
         {!mask && (
@@ -156,8 +156,8 @@ export function ImageMarkup({
           {M.queue}
         </Button>
       </header>
-      <div className="bc-image-stage">
-        <div className="bc-image-markup-canvas">
+      <div className="cc-image-stage">
+        <div className="cc-image-markup-canvas">
           <img
             ref={image}
             src={url}

@@ -6,7 +6,7 @@ const count = (n: number, one: string, many: string) => `${n} ${pluralForm('pt-B
 
 export const ptBR: SpaceMessages = {
   searchPlaceholder: "Buscar nomes, arquivos ou falas nos vídeos",
-  searchLabel: "Buscar no Space",
+  searchLabel: "Buscar na Biblioteca",
 
   openVideo: "Abrir vídeo",
   viewInfo: "Ver informações",
@@ -133,7 +133,7 @@ export const ptBR: SpaceMessages = {
   trashVideoTitle: "Excluir este vídeo?",
   trashVideoBody: "A pasta inteira vai à Lixeira do projeto, restaurável. Mídias originais vinculadas ficam no local.",
   trashVideoRelated: (n: number) =>
-    `${count(n, "item", "itens")} exportados ou gerados dele ficam no Space, não são excluídos com o vídeo:`,
+    `${count(n, "item", "itens")} exportados ou gerados dele ficam na Biblioteca, não são excluídos com o vídeo:`,
   trashVideoConfirm: "Excluir vídeo",
 
   purgeTitle: "Excluir permanentemente?",
@@ -149,7 +149,7 @@ export const ptBR: SpaceMessages = {
   renameTitle: "Renomear",
   renameLabel: "Nome de exibição",
   renameHint: (fileName: string) =>
-    `Só muda nome no Space, não o arquivo. Vazio retoma “${fileName}".`,
+    `Só muda nome na Biblioteca, não o arquivo. Vazio retoma “${fileName}".`,
   save: "Salvar",
 
   changedDialogTitle: "O vídeo de origem mudou",
@@ -182,10 +182,10 @@ export const ptBR: SpaceMessages = {
   openForEdit: "Abrir no editor",
   newVideo: "Criar vídeo",
   revealUnavailable: "Arquivo fora de projeto/sessão; sem local para mostrar",
-  sidebarLabel: "Categorias do Space",
+  sidebarLabel: "Categorias da Biblioteca",
   kindsHeader: "Categorias",
   mineHeader: "Organizar resultados",
-  sidebarNote: "Space mostra vídeos, mídias e resultados dos projetos. Arquivos ficam nas pastas próprias. Arquivos exportados ou gerados a partir de um vídeo ficam agrupados com ele; navegue por tipo para vê-los um a um.",
+  sidebarNote: "A Biblioteca mostra vídeos, mídias e resultados dos projetos. Arquivos ficam nas pastas próprias. Arquivos exportados ou gerados a partir de um vídeo ficam agrupados com ele; navegue por tipo para vê-los um a um.",
   all: "Todos",
   emptyFiltered: "Sem itens correspondentes",
   emptyTrash: "Lixeira vazia",
@@ -205,14 +205,14 @@ export const ptBR: SpaceMessages = {
   issuesTitle: (n: number) => (pluralForm('pt-BR', n, { one: `${n} pasta não listada inteira`, other: `${n} pastas não listadas inteiras` })),
   issueTruncated: (detail: string) => `Arquivos demais, lista parcial: ${detail}`,
   issueUnreadable: (detail: string) => `Não foi possível ler: ${detail}`,
-  preparing: "Preparando Space…",
+  preparing: "Preparando a Biblioteca…",
   preparingBody: "Na primeira vez, precisa verificar pastas. Aguarde um momento.",
 
   createIn: (project: string, hint: string) => `Em “${project}" · ${hint}`,
 
   whichProjectFor: (label: string) => `${label}: qual projeto`,
   entryActions: (name: string) => `Ações de “${name}”`,
-  entriesLabel: "Itens do Space",
+  entriesLabel: "Itens da Biblioteca",
   columnName: "Nome",
   columnKind: "Tipo",
   columnSource: "Fonte",

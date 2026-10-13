@@ -5,11 +5,6 @@ export const ja: GeneralSettingsMessages = {
   language: '言語',
   languageDesc: 'すぐに反映され、再起動は不要です。',
   languageSystem: (current: string) => `システム（${current}）`,
-  appearance: '外観',
-  appearanceDesc: 'このコンピュータの CucCut ウインドウにだけ適用されます。',
-  schemeSystem: 'システム',
-  schemeLight: 'ライト',
-  schemeDark: 'ダーク',
 
   saveFailed: (message: string) => `保存できませんでした：${message}`,
 

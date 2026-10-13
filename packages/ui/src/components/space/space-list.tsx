@@ -1,15 +1,26 @@
-import { useCallback, useLayoutEffect, useRef, type ComponentType, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
 import type { SpaceEntry, SpaceEntryKind } from '@cuccut/protocol';
+import {
+  Archive as ArchiveIcon,
+  Captions,
+  FileText as FileTextIcon,
+  Film,
+  Image as ImageIcon,
+  LayoutTemplate,
+  Music,
+  Palette,
+  Presentation,
+  Shapes as ShapesIcon,
+  Star as StarIcon,
+  Upload,
+  Video as VideoIcon,
+  type LucideIcon,
+} from 'lucide-react';
 import {
   ActionButton,
   ActionMenu,
-  Card,
-  CardPreview,
-  CardView,
   Cell,
   Column,
-  Content,
-  Footer,
   MenuItem,
   MenuSection,
   Row,
@@ -106,6 +117,22 @@ export const KIND_ICON: Record<SpaceEntryKind, ComponentType> = {
   template: Template,
 };
 
+/** Lucide icons for each kind (page rail, filter pills and card meta lines; the S2 set above stays for menus and lists). */
+export const KIND_LUCIDE: Record<SpaceEntryKind, LucideIcon> = {
+  video: Film,
+  export: Upload,
+  'video-file': VideoIcon,
+  image: ImageIcon,
+  audio: Music,
+  subtitle: Captions,
+  document: FileTextIcon,
+  slides: Presentation,
+  design: ShapesIcon,
+  'design-system': Palette,
+  package: ArchiveIcon,
+  template: LayoutTemplate,
+};
+
 const thumb = style({
   position: 'relative',
   display: 'flex',
@@ -130,7 +157,7 @@ const thumbSmall = style({
   color: { default: 'gray-600', isMissing: 'gray-400' },
   overflow: 'hidden',
 });
-const thumbImage = style({ width: 'full', height: 'full', objectFit: 'cover', display: 'block' });
+const thumbImage = style({ width: 'full', height: 'full', objectFit: { default: 'cover', isContain: 'contain' }, display: 'block' });
 /** 文档与字幕：正文摘要印在一张纸上（原型 sp-prev--document）；列表行里只留纸面和类型图标。 */
 const docBack = style({
   position: 'relative',
@@ -221,7 +248,7 @@ const favMark = style({ display: 'flex', color: 'yellow-800', flexShrink: 0 });
  * 预览块（原型 ItemPreview）：画面铺满；文档与字幕是纸上的正文摘要；没有的画类型图标，缺失的加「找不到文件」。
  * `small` 是列表名称列里的那一档：名字就在旁边，整块对读屏隐藏；文档只留纸面和类型图标；缺失只靠灰底，文字由 aria-label 说。
  */
-export function EntryThumb({ entry, small }: { entry: SpaceEntry; small?: boolean }) {
+export function EntryThumb({ entry, small, contain = false }: { entry: SpaceEntry; small?: boolean; contain?: boolean }) {
   const thumbnail = useEntryThumbnail(entry);
   const missing = entry.status === 'missing';
   const Icon = KIND_ICON[entry.kind];
@@ -230,7 +257,7 @@ export function EntryThumb({ entry, small }: { entry: SpaceEntry; small?: boolea
   if (thumbnail?.kind === 'image') {
     return (
       <div className={small ? thumbSmall({}) : thumb} aria-hidden={small || undefined}>
-        <img className={thumbImage} src={thumbnail.url} alt="" decoding="async" />
+        <img className={thumbImage({ isContain: contain })} src={thumbnail.url} alt="" decoding="async" />
       </div>
     );
   }
@@ -476,48 +503,144 @@ function useListDeps({ entries, now, canReveal, onAction, transcribeAction, shor
   return { act, dependencies: [entryMenuKey(entries, canReveal, transcribeAction, sourceOf), now, shorts] };
 }
 
+/**
+ * The gallery (agentcut library cards): a solid 24px card per entry — the whole thumbnail, up to two lines of name, what
+ * it is and where it lives — with its status, files, shorts and menu along the bottom. The name is the card's one
+ * button (its hit area covers the card) and runs the entry's default action; the controls below sit above it.
+ */
 export function SpaceGrid(props: ListProps) {
-  const { entries, now, canReveal, onAction, transcribeAction, empty, shorts } = props;
-  const { act, dependencies } = useListDeps(props);
+  const { entries, now, sourceOf, canReveal, transcribeAction, empty, shorts } = props;
+  const { act } = useListDeps(props);
+  // Cards render a page at a time and the next page joins when the end of the grid scrolls near, so a library of
+  // thousands does not mount (and fetch a thumbnail for) every item at once.
+  const [limit, setLimit] = useState(GRID_PAGE);
+  const sentinel = useRef<HTMLLIElement>(null);
+  const more = entries.length > limit;
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!more || !node || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((seen) => {
+      if (seen.some((s) => s.isIntersecting)) setLimit((n) => n + GRID_PAGE);
+    }, { rootMargin: '800px 0px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [more, limit]);
+  if (!entries.length) return <>{empty()}</>;
   return (
-    <CardView
+    <ul
+      data-cc
       aria-label={COPY.entriesLabel}
-      layout="grid"
-      size="M"
-      variant="tertiary"
-      items={entries}
-      dependencies={dependencies}
-      styles={listStyles}
-      renderEmptyState={empty}
-      onAction={(key) => {
-        const entry = entries.find((e) => e.id === key);
-        if (entry) onAction(primaryAction(entry), entry);
-      }}>
-      {(entry) => (
-        <Card id={entry.id} textValue={entry.name}>
-          <CardPreview>
-            <EntryThumb entry={entry} />
-          </CardPreview>
-          <Content>
-            <Text slot="title">{entry.name}</Text>
-            {entryMenu(entry, canReveal(entry), act, transcribeAction(entry))}
-            <Text slot="description">{hitsText(entry) ?? [KIND_LABEL[entry.kind], measureOf(entry)].filter(Boolean).join(' · ')}</Text>
-          </Content>
-          <Footer>
-            <EntryStatus entry={entry} now={now} quiet />
-            {entry.user.favorite ? (
-              <span className={favMark} aria-label={COPY.favorited}>
-                <StarFilled />
-              </span>
-            ) : null}
-            <ShortsButton row={entry} count={shortsOf(shorts, entry)} onAction={act} />
-            <FilesButton row={entry} onAction={act} />
-          </Footer>
-        </Card>
-      )}
-    </CardView>
+      onKeyDown={moveBetweenCards}
+      className="grid grid-cols-1 gap-4 min-[520px]:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {entries.slice(0, limit).map((entry) => (
+        <GridCard
+          key={entry.id}
+          entry={entry}
+          now={now}
+          source={sourceOf(entry)}
+          shorts={shortsOf(shorts, entry)}
+          canReveal={canReveal(entry)}
+          transcribe={transcribeAction(entry)}
+          onAction={act}
+        />
+      ))}
+      {more ? <li ref={sentinel} aria-hidden className="col-span-full h-px" /> : null}
+    </ul>
   );
 }
+
+/** How many cards the gallery adds at a time. */
+const GRID_PAGE = 60;
+
+/**
+ * Arrow keys move between the cards' open buttons (row by row with up and down, by the grid's current column count);
+ * Tab still walks each card's controls.
+ */
+function moveBetweenCards(event: KeyboardEvent<HTMLUListElement>) {
+  const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 0, ArrowUp: 0, Home: 0, End: 0 }[event.key];
+  if (step === undefined || event.altKey || event.ctrlKey || event.metaKey) return;
+  const target = event.target as HTMLElement;
+  if (!target.matches('[data-card-open]')) return;
+  const cards = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-card-open]'));
+  const index = cards.indexOf(target);
+  if (index < 0) return;
+  const columns = Math.max(1, getComputedStyle(event.currentTarget).gridTemplateColumns.split(' ').filter(Boolean).length);
+  const rtl = getComputedStyle(event.currentTarget).direction === 'rtl';
+  let next = index;
+  if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = cards.length - 1;
+  else if (event.key === 'ArrowDown') next = index + columns;
+  else if (event.key === 'ArrowUp') next = index - columns;
+  else next = index + (rtl ? -step : step);
+  if (next < 0 || next >= cards.length || next === index) return;
+  event.preventDefault();
+  cards[next]!.focus();
+  cards[next]!.scrollIntoView({ block: 'nearest' });
+}
+
+const GridCard = memo(function GridCard({
+  entry,
+  now,
+  source,
+  shorts,
+  canReveal,
+  transcribe,
+  onAction,
+}: {
+  entry: SpaceRow;
+  now: number;
+  source: string;
+  shorts: number;
+  canReveal: boolean;
+  transcribe: SpaceTranscribeAction | null;
+  /** Stable (`useListDeps`), so a card only re-renders when its own entry, line or status changes. */
+  onAction: (action: EntryAction, entry: SpaceEntry) => void;
+}) {
+  const Icon = KIND_LUCIDE[entry.kind];
+  // Paper-like previews (documents, subtitles, decks) carry their own kind label in the corner; their size goes in the line.
+  const paper = entry.kind === 'subtitle' || entry.kind === 'document' || entry.kind === 'slides' || entry.kind === 'design';
+  const measure = paper ? '' : measureOf(entry);
+  const line = hitsText(entry) ?? [KIND_LABEL[entry.kind], paper ? measureOf(entry) : null, source].filter(Boolean).join(' · ');
+  return (
+    <li className="group/card relative flex min-w-0 flex-col overflow-hidden rounded-3xl bg-card ring-1 ring-foreground/10 transition-[background-color,box-shadow] duration-150 hover:bg-secondary hover:ring-foreground/25 motion-reduce:transition-none">
+      <div className="relative aspect-video w-full overflow-hidden bg-black/30">
+        <EntryThumb entry={entry} contain />
+        {entry.user.favorite ? (
+          <span className="absolute top-3 left-3 flex size-7 items-center justify-center rounded-full bg-black/70 text-white" role="img" aria-label={COPY.favorited}>
+            <StarIcon aria-hidden className="size-3.5 fill-current" />
+          </span>
+        ) : null}
+        {measure ? (
+          <span className="absolute right-3 bottom-3 rounded-full bg-black/80 px-2.5 py-1 text-xs text-white tabular-nums">{measure}</span>
+        ) : null}
+      </div>
+      <div className="flex min-w-0 flex-col gap-1.5 px-4 pt-3.5">
+        <button
+          type="button"
+          data-card-open=""
+          onClick={() => onAction(primaryAction(entry), entry)}
+          title={entry.name}
+          className="line-clamp-2 min-h-10 cursor-pointer text-start text-sm leading-5 font-medium text-foreground outline-none wrap-anywhere after:absolute after:inset-0 after:rounded-3xl focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-ring">
+          {entry.name}
+        </button>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <Icon aria-hidden className="size-3.5 shrink-0" />
+          <span className="truncate" title={line}>
+            {line}
+          </span>
+        </span>
+      </div>
+      <div className="relative z-10 mt-auto flex min-h-11 items-center gap-1 px-3 pt-1.5 pb-2.5">
+        <span className="flex min-w-0 flex-1 items-center px-1">
+          <EntryStatus entry={entry} now={now} quiet />
+        </span>
+        <ShortsButton row={entry} count={shorts} onAction={onAction} />
+        <FilesButton row={entry} onAction={onAction} />
+        {entryMenu(entry, canReveal, onAction, transcribe)}
+      </div>
+    </li>
+  );
+});
 
 /** 视频条目派生出的子视频数。 */
 function shortsOf(shorts: ListProps['shorts'], entry: SpaceEntry): number {

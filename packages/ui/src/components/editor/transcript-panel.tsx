@@ -266,7 +266,7 @@ const bar = style({
   borderBottomWidth: 0,
   borderStyle: 'solid',
   borderColor: 'gray-200',
-  backgroundColor: 'gray-25',
+  backgroundColor: 'gray-50',
 });
 const barText = style({
   flexGrow: 1,

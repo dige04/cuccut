@@ -70,7 +70,7 @@ const impactBox = style({
   flexDirection: 'column',
   gap: 8,
   padding: 12,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',

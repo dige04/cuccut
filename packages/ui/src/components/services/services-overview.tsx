@@ -1,7 +1,6 @@
-import { ActionButton, Badge } from '@react-spectrum/s2';
-import ChevronRight from '@react-spectrum/s2/icons/ChevronRight';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
-import { Button as RACButton } from 'react-aria-components';
+import { ChevronRight } from 'lucide-react';
+import { cn } from 'cn';
+import { RouteLink } from '../../cc/components/page-chrome.tsx';
 import { REMOTE_COPY, SERVICE_COPY, SERVICES_PAGE_COPY } from '../../copy.ts';
 import { mcpScope, mcpSub, scopeVideos } from '../../model/services-mcp.ts';
 import { shareAddresses } from '../../model/services-remote.ts';
@@ -19,93 +18,41 @@ import {
 import { useConnection } from '../../state/connection-store.ts';
 import { useServices } from '../../state/services-store.ts';
 import { useShare } from '../../state/share-store.ts';
-import { useShell } from '../../state/shell-store.ts';
 import { useSpace } from '../../state/space-store.ts';
-import { UtilityPage } from '../utility-page.tsx';
-import { FlipButton, lede, ServiceLightDot, ServiceLights, ServiceMark } from './service-card.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
+import { FlipButton, ServiceLightDot, ServiceLights, ServiceMark } from './service-card.tsx';
 import { useFlipService } from './use-service-actions.ts';
 import { useServiceStates } from './use-share-status.ts';
 
-/* 服务总览（原型 designs/cuccut/app/page-services.jsx `ServicesOverview` / `ServiceItem`，services.css `.svclist` / `.svcitem`）：
-   一张卡四行（原型三行，加上从 Web 服务页拆出来的模型接口），行内就地起停，点名字进详情。 */
-
-const actions = style({ display: 'flex', alignItems: 'center', gap: 12 });
-const list = style({
-  boxSizing: 'border-box',
-  maxWidth: '[720px]',
-  paddingX: 16,
-  paddingY: 4,
-  marginTop: 20,
-  borderRadius: 'lg',
-  backgroundColor: 'gray-50',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-});
-const item = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  paddingY: 12,
-  borderTopWidth: 0,
-  borderXWidth: 0,
-  borderBottomWidth: { default: 1, ':last-child': 0 },
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-const main = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-  flexGrow: 1,
-  flexShrink: 1,
-  minWidth: 0,
-  padding: 4,
-  margin: -4,
-  borderWidth: 0,
-  borderRadius: 'default',
-  backgroundColor: 'transparent',
-  font: 'ui',
-  color: 'inherit',
-  textAlign: 'start',
-  cursor: 'default',
-  outlineStyle: { default: 'none', isFocusVisible: 'solid' },
-  outlineColor: 'focus-ring',
-  outlineWidth: 2,
-  outlineOffset: 2,
-});
-const itemTxt = style({ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 });
-const itemName = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui' });
-const itemNameText = style({ fontWeight: 'bold', color: 'gray-900', textDecoration: { default: 'none', isHovered: 'underline' } });
-const itemState = style({ display: 'flex', alignItems: 'center', gap: '[6px]', font: 'ui-sm', color: 'gray-700', minWidth: 0 });
-const itemLabel = style({ flexShrink: 0, whiteSpace: 'nowrap' });
-const itemSep = style({ color: 'gray-400' });
-const itemDetail = style({ color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 });
-// 起停按钮不跟着让位：出错原因很长时左侧那段按比例收缩，按钮会被挤成两行，所以按钮这格不收缩。
-const itemAction = style({ display: 'flex', flexShrink: 0, whiteSpace: 'nowrap' });
+/* Services overview (agentcut workspace page): one solid card per service with its status dot, what it is doing right now,
+   a start/stop button in place, and the card itself leading to the service's page. */
 
 export function ServicesOverview() {
   const states = useServiceStates();
   const summary = servicesSummary(states);
   return (
-    <UtilityPage
+    <UtilityShell
       kind="services"
       title={SERVICES_PAGE_COPY.title}
+      blurb={SERVICES_PAGE_COPY.lede}
       actions={
-        <span className={actions}>
+        <span data-cc className="flex items-center gap-3">
           <ServiceLights lights={serviceLights(states)} />
-          <Badge size="S" fillStyle="subtle" variant={summary.tone === 'error' ? 'notice' : summary.tone === 'on' ? 'positive' : 'neutral'}>
+          <span
+            className={cn(
+              'inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium',
+              summary.tone === 'error' ? 'bg-orange-400/12 text-orange-300' : 'bg-white/8 text-foreground/85',
+            )}>
             {summary.text}
-          </Badge>
+          </span>
         </span>
       }>
-      <p className={lede}>{SERVICES_PAGE_COPY.lede}</p>
-      <div className={list}>
+      <ul data-cc className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {SERVICE_IDS.map((id) => (
           <ServiceItem key={id} id={id} state={states[id]} />
         ))}
-      </div>
-    </UtilityPage>
+      </ul>
+    </UtilityShell>
   );
 }
 
@@ -134,47 +81,40 @@ function useItemDetail(id: ServiceId, state: ServiceState): string {
 }
 
 function ServiceItem({ id, state }: { id: ServiceId; state: ServiceState }) {
-  const go = useShell((s) => s.go);
   const connected = useConnection((s) => s.state.status === 'connected');
   const flip = useFlipService(id);
   const detail = useItemDetail(id, state);
   const copy = SERVICE_COPY[id];
-  const open = () => go({ tab: 'services', service: id });
   return (
-    <div className={item}>
-      <RACButton className={(s) => main(s)} onPress={open}>
-        {({ isHovered }) => (
-          <>
-            <ServiceMark id={id} state={state} />
-            <span className={itemTxt}>
-              <span className={itemName}>
-                <span className={itemNameText({ isHovered })}>{copy.name}</span>
-                <Badge size="S" fillStyle="subtle" variant="neutral">
-                  {copy.scope}
-                </Badge>
-              </span>
-              <span className={itemState}>
-                <ServiceLightDot tone={serviceTone(state)} busy={serviceBusy(state)} />
-                <span className={itemLabel}>{serviceStateLabel(id, state)}</span>
-                <span className={itemSep} aria-hidden="true">
-                  ·
-                </span>
-                <span className={itemDetail} title={detail}>
-                  {detail}
-                </span>
-              </span>
-            </span>
-          </>
-        )}
-      </RACButton>
+    <li className="group/svc relative flex min-w-0 flex-col gap-4 rounded-3xl bg-card p-5 ring-1 ring-foreground/10 transition-[background-color,box-shadow] duration-150 hover:bg-secondary hover:ring-foreground/20 motion-reduce:transition-none">
+      <div className="flex min-w-0 items-start gap-3">
+        <ServiceMark id={id} state={state} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {/* The name is the card's link; it covers the whole card, the start/stop button sits above it. */}
+            <RouteLink
+              route={{ tab: 'services', service: id }}
+              label={SERVICES_PAGE_COPY.open(copy.name)}
+              className="text-sm font-medium text-foreground outline-none after:absolute after:inset-0 after:rounded-3xl focus-visible:after:outline-2 focus-visible:after:outline-offset-2 focus-visible:after:outline-ring">
+              {copy.name}
+            </RouteLink>
+            <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs text-muted-foreground">{copy.scope}</span>
+          </div>
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <ServiceLightDot tone={serviceTone(state)} busy={serviceBusy(state)} />
+            <span className="shrink-0 text-foreground/85">{serviceStateLabel(id, state)}</span>
+          </div>
+        </div>
+        <ChevronRight aria-hidden className="mt-1 size-4 shrink-0 text-muted-foreground" />
+      </div>
+      <p className="line-clamp-2 min-h-10 text-sm leading-5 text-muted-foreground" title={detail}>
+        {detail}
+      </p>
       {state === 'unavailable' ? null : (
-        <span className={itemAction}>
-          <FlipButton id={id} state={state} size="S" disabled={!connected} onFlip={flip} />
-        </span>
+        <div className="relative z-10 flex">
+          <FlipButton id={id} state={state} size="S" primary={false} disabled={!connected} onFlip={flip} />
+        </div>
       )}
-      <ActionButton isQuiet size="S" aria-label={SERVICES_PAGE_COPY.open(copy.name)} onPress={open}>
-        <ChevronRight />
-      </ActionButton>
-    </div>
+    </li>
   );
 }

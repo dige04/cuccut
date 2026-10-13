@@ -5,11 +5,6 @@ export const pl: GeneralSettingsMessages = {
   language: "Język",
   languageDesc: "Działa od razu, bez ponownego uruchamiania.",
   languageSystem: (current: string) => `Systemowy (${current})`,
-  appearance: "Wygląd",
-  appearanceDesc: "Dotyczy tylko okien CucCut na tym komputerze.",
-  schemeSystem: "Systemu",
-  schemeLight: "Jasny",
-  schemeDark: "Ciemny",
 
   saveFailed: (message: string) => `Nie udało się zapisać: ${message}`,
 

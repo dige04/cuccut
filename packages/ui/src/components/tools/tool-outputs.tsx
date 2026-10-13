@@ -88,8 +88,8 @@ const row = style({
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
-  padding: { default: 12, isCompact: 8 },
-  borderRadius: 'lg',
+  padding: { default: 12, isCompact: 8, isPanel: 16 },
+  borderRadius: { default: '[16px]', isPanel: '[24px]' },
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
@@ -151,7 +151,17 @@ function NewMovieFrom({ entry, label }: { entry: SpaceEntry; label: string }) {
 }
 
 /** 产物行；`fromTool` 是产出它的工具（写进视频的结果按它给下一步）；`compact` 是记录卡里的窄版。 */
-export function ToolOutputRow({ entry, fromTool, compact = false }: { entry: SpaceEntry; fromTool?: ToolId | null; compact?: boolean }) {
+export function ToolOutputRow({
+  entry,
+  fromTool,
+  compact = false,
+  panel = false,
+}: {
+  entry: SpaceEntry;
+  fromTool?: ToolId | null;
+  compact?: boolean;
+  panel?: boolean;
+}) {
   const actions = useOutputActions();
   const movie = entry.kind === 'video';
   const nexts = followUps(entry, fromTool);
@@ -168,7 +178,7 @@ export function ToolOutputRow({ entry, fromTool, compact = false }: { entry: Spa
       </Button>
     ) : null;
   return (
-    <div className={row({ isCompact: compact })}>
+    <div className={row({ isCompact: compact, isPanel: panel })}>
       <div className={head}>
         <EntryThumb entry={entry} small />
         <span className={text}>
@@ -212,19 +222,37 @@ export function ToolOutputRow({ entry, fromTool, compact = false }: { entry: Spa
 
 const list = style({ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 });
 const listHead = style({ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 });
-const listTitle = style({ flexGrow: 1, margin: 0, font: 'detail', fontWeight: 'bold', color: 'gray-700' });
+const listTitle = style({
+  flexGrow: 1,
+  margin: 0,
+  paddingX: { default: 0, isPanel: 4 },
+  font: { default: 'detail', isPanel: 'ui' },
+  fontWeight: { default: 'bold', isPanel: 'medium' },
+  color: { default: 'gray-700', isPanel: 'gray-900' },
+});
 
 /** 一次运行的全部产物；`saveDir` 给了就在头上写保存位置。没有产物时什么也不画。 */
-export function ToolOutputs({ entries, fromTool, saveDir }: { entries: readonly SpaceEntry[]; fromTool?: ToolId | null; saveDir?: string | null }) {
+export function ToolOutputs({
+  entries,
+  fromTool,
+  saveDir,
+  panel = false,
+}: {
+  entries: readonly SpaceEntry[];
+  fromTool?: ToolId | null;
+  saveDir?: string | null;
+  /** In a page column of panels (task details): the heading and 24px cards match the other sections. */
+  panel?: boolean;
+}) {
   if (!entries.length) return null;
   return (
     <div className={list}>
       <div className={listHead}>
-        <h3 className={listTitle}>{OUTPUT_COPY.title}</h3>
+        <h3 className={listTitle({ isPanel: panel })}>{OUTPUT_COPY.title}</h3>
         {saveDir ? <span className={detail}>{OUTPUT_COPY.savedIn(saveDirLabel(saveDir))}</span> : null}
       </div>
       {entries.map((e) => (
-        <ToolOutputRow key={e.id} entry={e} fromTool={fromTool} />
+        <ToolOutputRow key={e.id} entry={e} fromTool={fromTool} panel={panel} />
       ))}
     </div>
   );

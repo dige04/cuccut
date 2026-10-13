@@ -59,7 +59,7 @@ export function ThreadEmpty({ conversationId, projectId, folderOf }: { conversat
       </span>
       <h2 className={greet}>{videoName ? THREAD_EMPTY_COPY.greetVideo(videoName) : THREAD_EMPTY_COPY.greet}</h2>
       <p className={sub}>{videoName ? THREAD_EMPTY_COPY.subVideo : THREAD_EMPTY_COPY.sub}</p>
-      <div className={suggestions} role="group" aria-label={THREAD_EMPTY_COPY.suggestions}>
+      <div className={suggestions} data-cc-suggestions="" role="group" aria-label={THREAD_EMPTY_COPY.suggestions}>
         {chips.map((chip) => (
           <MessageSuggestion key={chip} onPress={() => pick(chip)}>
             {chip}

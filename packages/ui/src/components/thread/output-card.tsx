@@ -39,8 +39,8 @@ const outputCard = style({
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
-  borderRadius: '[10px]',
-  backgroundColor: { default: 'gray-25', isHovered: 'gray-50', isPressed: 'gray-75' },
+  borderRadius: '[20px]',
+  backgroundColor: { default: 'gray-50', isHovered: 'gray-75', isPressed: 'gray-100' },
   textAlign: 'start',
   font: 'ui',
   color: 'gray-900',
@@ -57,8 +57,8 @@ const outputIcon = style({
   justifyContent: 'center',
   flexShrink: 0,
   size: 40,
-  borderRadius: 'default',
-  backgroundColor: 'gray-75',
+  borderRadius: 'xl',
+  backgroundColor: 'gray-100',
   color: 'gray-700',
 });
 const outputBody = style({ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1, minWidth: 0 });
@@ -80,8 +80,8 @@ const videoCard = style({
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
-  borderRadius: '[10px]',
-  backgroundColor: 'gray-25',
+  borderRadius: '[20px]',
+  backgroundColor: 'gray-50',
   font: 'ui',
   color: 'gray-900',
 });
@@ -133,11 +133,11 @@ const videoDuration = style({
   bottom: 8,
   paddingX: '[6px]',
   paddingY: 4,
-  borderRadius: 'sm',
-  backgroundColor: 'gray-900',
+  borderRadius: 'full',
+  backgroundColor: '[rgb(0 0 0 / 0.6)]',
   font: 'code-xs',
   // font 简写会设置 code 文字色，角标的对比色必须在它之后。
-  color: 'gray-25',
+  color: 'white',
 });
 const videoFooter = style({ display: 'flex', alignItems: 'center', gap: 12, paddingX: 16, paddingY: 12 });
 const videoName = style({ fontWeight: 'bold', overflowWrap: 'anywhere' });

@@ -56,7 +56,6 @@ export const ptBR: ElementsMessages = {
   tabBrand: "Marca",
   tabProps: "Propriedades",
   currentTool: "Ferramenta de edição atual",
-  videoTools: "Ferramentas de edição de vídeo",
   resizePanel: "Redimensionar painel",
   added: (label: string, start: string, end: string) => `Adicionado ${label} · ${start} → ${end}`,
   undo: "Desfazer",

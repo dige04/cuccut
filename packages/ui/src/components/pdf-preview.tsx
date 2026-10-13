@@ -103,8 +103,8 @@ export default function PdfPreview({ url, fileName }: { url: string; fileName: s
       {rendering && <ProgressCircle size="S" isIndeterminate aria-label={S.filePreview.loading} />}
     </div>
     {error && <div className={note} role="alert">{S.filePreview.failed(error)}</div>}
-    <div ref={scroller} className={`${scroll} bc-scroll`}>
-      <div className={paper} style={error ? { visibility: 'hidden' } : undefined}><canvas ref={canvas} aria-label={`${fileName} · ${page}`} /><div ref={text} className="bc-pdf-text textLayer" /></div>
+    <div ref={scroller} className={`${scroll} cc-scroll`}>
+      <div className={paper} style={error ? { visibility: 'hidden' } : undefined}><canvas ref={canvas} aria-label={`${fileName} · ${page}`} /><div ref={text} className="cc-pdf-text textLayer" /></div>
     </div>
   </section>;
 }

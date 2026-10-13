@@ -1,13 +1,15 @@
-import { useCallback, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { Id } from '@cuccut/protocol';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
+import { cn } from 'cn';
 import { WORKSPACE_COPY } from '../copy.ts';
+import { SessionSlot, SessionSlotsProvider } from '../cc/components/session-slots.tsx';
 import {
   CONVERSATION_TAB,
   DEFAULT_VIEW,
   DOCK_DEFAULT,
   DOCK_MIN,
+  EDITOR_MIN_WIDTH,
   PANE_MIN_WIDTH,
   dockFor,
   isNarrow,
@@ -18,154 +20,81 @@ import {
 } from '../model/workspace.ts';
 import { useConversationMeta } from '../state/directory-store.ts';
 import { useShell } from '../state/shell-store.ts';
-import { ConversationHeader } from './conversation-header.tsx';
 import { ConversationView } from './conversation-view.tsx';
 import { HomeLanding } from './home-landing.tsx';
-import { HomeSidebar } from './home-sidebar.tsx';
-import { TitleBar } from './title-bar.tsx';
-import { homeContentRegion, homeConversationRegion, paneEdge } from './pane-edges.ts';
+import { SESSION_COPY } from './session/session-copy.ts';
+import { SessionHeader } from './session/session-header.tsx';
+import { SessionsDrawer, useDrawerInline } from './session/sessions-drawer.tsx';
 import { StartPage } from './start-page.tsx';
 import { useWorkspaceOverlay } from './workspace/workspace-overlay.ts';
 import { WorkspacePanes } from './workspace/workspace-panes.tsx';
 import { workspacePanelId, workspaceTabId } from './workspace/workspace-tabs.tsx';
 
-const session = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 });
-const layout = style({ display: 'flex', flexGrow: 1, minHeight: 0 });
-/** 原型 home-workspace.css `.home-workspace`。 */
-const content = style({ position: 'relative', display: 'flex', flexGrow: 1, minWidth: 0, minHeight: 0 });
-/**
- * 原型 `.home-workspace__conversation`：没有右侧区域时占满；旁边有右侧区域时宽度可拖（至少 320，右侧正常显示时保留至少 320），
- * 右沿那根 2px 的线连到标题栏；单条标签条（窄窗口或完整视图）里选中了别的标签时隐藏但不卸载（草稿与滚动位置都在）。
- */
-const column = style({
-  display: { default: 'flex', isHidden: 'none' },
-  flexDirection: 'column',
-  minHeight: 0,
-  boxSizing: 'border-box',
-  backgroundColor: 'gray-25',
-  flexGrow: { default: 1, isDocked: 0 },
-  flexShrink: { default: 1, isDocked: 0 },
-  minWidth: { default: 0, isDocked: 320 },
-  maxWidth: { default: '[100%]', isDocked: '[calc(100% - 320px)]' },
-  position: 'relative',
-  borderEndWidth: { default: 0, isDocked: 2 },
-  borderTopWidth: 0,
-  borderBottomWidth: 0,
-  borderStartWidth: 0,
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-/** 单条标签条（窄窗口或完整视图）里会话头在会话面板顶部（原型 apprail.css `.hhd`）：至少 56 高，左右 20（会话头自带 12），下边 2px 的分隔。 */
-const narrowHead = style({
-  display: 'flex',
-  alignItems: 'center',
-  flexShrink: 0,
-  minHeight: 56,
-  boxSizing: 'border-box',
-  paddingX: 8,
-  borderBottomWidth: 2,
-  borderTopWidth: 0,
-  borderStartWidth: 0,
-  borderEndWidth: 0,
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-/** 原型 ui.css `.seam--dock`：骑在会话列右沿上的 8px 拖动热区，悬停或拖动时那根线变成蓝色。 */
-const seam = style({
-  position: 'relative',
-  flexShrink: 0,
-  alignSelf: 'stretch',
-  width: 8,
-  marginStart: -4,
-  marginEnd: -4,
-  zIndex: 5,
-  cursor: 'col-resize',
-  touchAction: 'none',
-});
-const dragShield = style({ position: 'fixed', inset: 0, zIndex: 10000, cursor: 'col-resize', userSelect: 'none' });
-const seamBar = style({
-  position: 'absolute',
-  top: 0,
-  bottom: 0,
-  insetStart: 2,
-  width: 2,
-  backgroundColor: { default: 'transparent', isActive: 'blue-800' },
-  transition: 'default',
-});
-
 const NO_TABS: WorkspaceItem[] = [];
 
-/** 停靠着的会话列：右沿是标题栏里的一根分界，也是标题栏会话头的右界。 */
-function dockedColumn(element: HTMLElement) {
-  const offEdge = paneEdge(element);
-  const offRegion = homeConversationRegion(element);
-  return () => {
-    offEdge();
-    offRegion();
-  };
-}
+/** A solid content card (agentcut: content surfaces stay solid, 24px corners). */
+const card = 'overflow-hidden rounded-3xl border border-border/60 bg-card';
+/** The inspector's own column in a single strip (beside the open tab, when the window has room for both). */
+const INSPECTOR_WIDTH = 340;
 
 /**
- * Home：左边会话侧栏，中间是当前会话或新会话的起始页，右边是功能区（产品设计 §3，原型 home-workspace.jsx `HomeWorkspace`）。
- * 功能区是一组标签（视频、文件、项目文件、网页），按会话记住；当前标签跟着路由走（§2.5、§3.3 用户修订）。
- * 标签条、会话头与视图控件在标题栏里（HomeTitleBar）；会话列与右侧标签共用一个宽度。
- * 窄窗口（放不下会话列与编辑器）与完整视图都是单条标签条：会话是标签条的第一格，会话头移到会话面板顶部，同一时间只显示会话
- * 或一个标签；没显示的一侧不卸载（产品设计 §2.5、§3.3）。视图（收起、完整视图）按工作区记住。
+ * Home: the landing page while nothing is open; otherwise the session layout (agentcut editor frame). A glass header
+ * runs across the top; under it, 16px apart, an optional sessions drawer on the left, the open tab (video editor,
+ * file, web page) in the centre, and on the right the conversation with the selection inspector under it.
+ * With no tab on screen the conversation takes the centre at a reading width (agentcut /chat).
+ * Narrow windows and full view keep one strip of tabs in the header (the session is its first tab) and show either the
+ * session or one tab; the side not shown stays mounted (draft, scroll position, editor state).
  */
-export function HomePage({ conversationId, projectId, pane, platform }: {
+export function HomePage({ conversationId, projectId, pane }: {
   conversationId: Id | null;
   projectId: Id | null;
   pane: WorkspaceItem | null;
-  platform: string;
+  /** Unused; AppShell still passes it. */
+  platform?: string;
 }) {
   const landingTabs = useShell((s) => s.workspaces[workspaceKey(null, null)]?.tabs.length ?? 0);
   // Nothing open yet: the landing page. A session, a project or an open tab gets the session layout.
   if (!conversationId && !projectId && !pane && landingTabs === 0) return <HomeLanding />;
-  return <HomeSession conversationId={conversationId} projectId={projectId} pane={pane} platform={platform} />;
+  return (
+    <SessionSlotsProvider>
+      <HomeSession conversationId={conversationId} projectId={projectId} pane={pane} />
+    </SessionSlotsProvider>
+  );
 }
 
-function HomeSession({ conversationId, projectId, pane, platform }: {
+function HomeSession({ conversationId, projectId, pane }: {
   conversationId: Id | null;
   projectId: Id | null;
   pane: WorkspaceItem | null;
-  platform: string;
 }) {
   const book = workspaceKey(conversationId, projectId);
   const tabs = useShell((s) => s.workspaces[book]?.tabs ?? NO_TABS);
   const view = useShell((s) => s.views[book] ?? DEFAULT_VIEW);
   const narrow = useShell((s) => s.workspaceNarrow);
   const dockWidth = useShell((s) => s.dockWidth);
-  const meta = useConversationMeta(conversationId);
-  const columnRef = useRef<HTMLElement | null>(null);
+  const drawerInline = useDrawerInline();
+  const meta = useConversationMeta(conversationId) ?? null;
+  const columnRef = useRef<HTMLDivElement | null>(null);
   const measured = useRef(false);
   const [contentWidth, setContentWidth] = useState(0);
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
+  const [inspectorElement, setInspectorElement] = useState<HTMLElement | null>(null);
+  const inspectorFilled = useSlotHasContent(inspectorElement);
 
   const { visible, single } = workspaceMode({ active: pane ? itemKey(pane) : null, count: tabs.length, view, narrow });
   const docked = visible && !single;
-  // 单条标签条里显示着标签就是没选会话标签。
+  // In a single strip, a tab on screen means the session tab is not selected.
   const conversationHidden = visible && single;
+  // Where the open pane's inspector goes: under the conversation beside the tab, or in a single strip in a column of
+  // its own when the window still fits the editor beside it (full view on a wide window). Otherwise the layout offers
+  // no inspector slot and the pane keeps its inspector in place (IntoSessionSlot's fallback).
+  const inspectorSlot = docked || (conversationHidden && contentWidth >= EDITOR_MIN_WIDTH + INSPECTOR_WIDTH + 16);
+  // The right column: beside the open tab (docked); alone in a single strip only when the inspector has something.
+  const columnHidden = conversationHidden && !(inspectorSlot && inspectorFilled);
 
-  // 两个 ref 回调都是稳定的：只在停靠状态变了时挂上或卸下，不会每次渲染都重新量。
-  const dockRef = useCallback((element: HTMLElement) => {
-    columnRef.current = element;
-    const off = dockedColumn(element);
-    return () => {
-      off();
-      columnRef.current = null;
-    };
-  }, []);
-  const contentRef = useCallback((element: HTMLDivElement) => {
-    setContentElement(element);
-    const off = homeContentRegion(element);
-    return () => {
-      off();
-      setContentElement(null);
-    };
-  }, []);
-
-  // 容器放不下最窄会话列与编辑器时是窄窗口。第一次量只记录模式（窄窗口深链仍显示标签）；
-  // 之后从并排切到单列时，焦点在会话区里就选会话标签。
+  // The content area is narrow when it cannot fit the narrowest session column beside the editor. The first measure
+  // only records the mode (a deep link in a narrow window still shows its tab); later, switching from side by side to
+  // one strip selects the session tab when focus is inside the conversation.
   useLayoutEffect(() => {
     if (!contentElement) return;
     const sync = () => {
@@ -184,6 +113,7 @@ function HomeSession({ conversationId, projectId, pane, platform }: {
     return () => observer.disconnect();
   }, [contentElement]);
 
+  const draft = !conversationId;
   const conversation = conversationId ? (
     <ConversationView key={conversationId} conversationId={conversationId} />
   ) : (
@@ -191,46 +121,100 @@ function HomeSession({ conversationId, projectId, pane, platform }: {
   );
 
   return (
-    <div className={session}>
-    <TitleBar platform={platform} />
-    <div className={layout}>
-      <HomeSidebar />
-      <div ref={contentRef} className={content}>
-        <section
-          ref={docked ? dockRef : undefined}
-          className={column({ isDocked: docked, isHidden: conversationHidden })}
-          style={docked ? { width: dockWidth } : undefined}
-          data-home-conversation
-          {...(single
-            ? { id: workspacePanelId(CONVERSATION_TAB), role: 'tabpanel', 'aria-labelledby': workspaceTabId(CONVERSATION_TAB) }
-            : { 'aria-label': WORKSPACE_COPY.conversation })}>
-          {single && meta ? (
-            <div className={narrowHead}>
-              <ConversationHeader conversation={meta} />
-            </div>
-          ) : null}
-          {conversation}
-        </section>
-        <DockSeam key={book} column={columnRef} width={dockWidth} contentWidth={contentWidth} enabled={docked} />
-        <WorkspacePanes conversationId={conversationId} book={book} tabs={tabs} active={pane ? itemKey(pane) : null} visible={visible} />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SessionHeader conversation={meta} projectId={projectId} tabs={tabs} pane={pane} single={single} visible={visible} />
+      <div className="relative flex min-h-0 flex-1 gap-4 p-4">
+        <SessionsDrawer inline={drawerInline} />
+        <div ref={setContentElement} className="relative flex min-h-0 min-w-0 flex-1 gap-4">
+          <WorkspacePanes conversationId={conversationId} book={book} tabs={tabs} active={pane ? itemKey(pane) : null} visible={visible} />
+          <DockSeam key={book} column={columnRef} width={dockWidth} contentWidth={contentWidth} enabled={docked} />
+          <div
+            ref={columnRef}
+            className={cn(
+              'flex min-h-0 flex-col gap-4',
+              docked ? 'max-w-[calc(100%-20rem)] min-w-80 shrink-0' : conversationHidden ? 'w-[340px] shrink-0' : 'min-w-0 flex-1 items-center',
+              columnHidden && 'hidden',
+            )}
+            style={docked ? { width: dockWidth } : undefined}>
+            <section
+              className={cn(
+                'flex min-h-0 w-full flex-1 flex-col',
+                docked ? cn(card, 'min-h-64') : draft ? 'cc-scroll overflow-y-auto' : 'max-w-3xl',
+                docked && draft && 'cc-scroll overflow-y-auto',
+                conversationHidden && 'hidden',
+              )}
+              data-home-conversation
+              {...(single
+                ? { id: workspacePanelId(CONVERSATION_TAB), role: 'tabpanel', 'aria-labelledby': workspaceTabId(CONVERSATION_TAB) }
+                : { 'aria-label': WORKSPACE_COPY.conversation })}>
+              {conversation}
+            </section>
+            {/* The open pane's selection inspector portals here (agentcut: the right column is about the selection); the
+                pane brings its own cards. Empty, it takes no room. */}
+            {inspectorSlot ? (
+              <section
+                ref={setInspectorElement}
+                aria-label={SESSION_COPY.inspector}
+                className={cn('flex min-h-0 w-full shrink-0 flex-col', conversationHidden ? 'max-h-full' : 'max-h-[40%]', !inspectorFilled && 'hidden')}>
+                <SessionSlot name="inspector" className="cc-scroll flex max-h-full min-h-0 flex-col gap-3 overflow-y-auto empty:hidden" />
+              </section>
+            ) : null}
+          </div>
+        </div>
       </div>
-    </div>
     </div>
   );
 }
 
-/** 保持手柄挂载直到手势结束：收起后同一次拖动回拉仍可展开；双击恢复默认宽度。 */
+/**
+ * Whether something is rendered into the session slot inside `container` (the slot element has children). Follows
+ * the slot element being replaced and portals coming and going.
+ */
+function useSlotHasContent(container: HTMLElement | null): boolean {
+  const [filled, setFilled] = useState(false);
+  useEffect(() => {
+    if (!container) {
+      setFilled(false);
+      return;
+    }
+    let slot: Element | null = null;
+    const check = () => setFilled(!!slot && slot.childElementCount > 0);
+    const content = new MutationObserver(check);
+    const find = () => {
+      const next = container.querySelector('[data-session-slot]');
+      if (next !== slot) {
+        content.disconnect();
+        slot = next;
+        if (slot) content.observe(slot, { childList: true });
+      }
+      check();
+    };
+    const structure = new MutationObserver(find);
+    structure.observe(container, { childList: true });
+    find();
+    return () => {
+      structure.disconnect();
+      content.disconnect();
+    };
+  }, [container]);
+  return filled;
+}
+
+/**
+ * The seam between the open tab and the conversation column: drag it (or use ←/→) to resize the column, which sits on
+ * the right, so dragging left widens it; dragging far enough collapses the tab. It stays mounted until the gesture ends
+ * so the same drag can bring the tab back; a double click restores the default width.
+ */
 function DockSeam({ column, width, contentWidth, enabled }: {
   column: { current: HTMLElement | null }; width: number; contentWidth: number; enabled: boolean;
 }) {
   const start = useRef<{ x: number; width: number; pointerId: number } | null>(null);
-  const [hovered, setHovered] = useState(false);
   const [dragging, setDragging] = useState(false);
-  // 拖动期间登记为覆盖层：Electron 原生网页暂时让开，免得吞掉拖动事件。
+  // While dragging, count as an overlay so Electron's native web views step aside instead of swallowing the drag.
   useWorkspaceOverlay(dragging);
   const resize = (event: ReactPointerEvent<HTMLDivElement>) => {
     const from = start.current;
-    if (from?.pointerId === event.pointerId) useShell.getState().resizeWorkspace(from.width + event.clientX - from.x, contentWidth);
+    if (from?.pointerId === event.pointerId) useShell.getState().resizeWorkspace(from.width - (event.clientX - from.x), contentWidth);
   };
   const end = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (start.current?.pointerId !== event.pointerId) return;
@@ -241,7 +225,7 @@ function DockSeam({ column, width, contentWidth, enabled }: {
   if (!enabled && !dragging) return null;
   return <>
     <div
-      className={seam}
+      className="group/seam relative -mx-4 w-4 shrink-0 cursor-col-resize touch-none self-stretch outline-none"
       role="separator"
       tabIndex={0}
       aria-orientation="vertical"
@@ -249,8 +233,6 @@ function DockSeam({ column, width, contentWidth, enabled }: {
       aria-valuemin={DOCK_MIN}
       aria-valuemax={Math.max(DOCK_MIN, contentWidth - PANE_MIN_WIDTH)}
       aria-valuenow={dockFor(contentWidth, width)}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
       onPointerDown={(event) => {
         if (event.button !== 0 || start.current) return;
         event.preventDefault();
@@ -263,7 +245,7 @@ function DockSeam({ column, width, contentWidth, enabled }: {
         else resize(event);
       }}
       onPointerUp={(event) => {
-        // 快速拖动可能合并 pointermove，仍处理松手位置。
+        // A fast drag can coalesce pointermove events; still apply the release position.
         resize(event);
         end(event);
       }}
@@ -272,11 +254,16 @@ function DockSeam({ column, width, contentWidth, enabled }: {
       onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
         event.preventDefault();
-        useShell.getState().resizeWorkspace(dockFor(contentWidth, width) + (event.key === 'ArrowRight' ? 10 : -10), contentWidth);
+        useShell.getState().resizeWorkspace(dockFor(contentWidth, width) + (event.key === 'ArrowLeft' ? 10 : -10), contentWidth);
       }}
       onDoubleClick={() => useShell.getState().setDockWidth(DOCK_DEFAULT)}>
-      <div className={seamBar({ isActive: hovered || dragging })} />
+      <div
+        className={cn(
+          'absolute inset-y-8 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors motion-reduce:transition-none',
+          dragging ? 'bg-white/40' : 'bg-transparent group-hover/seam:bg-white/20 group-focus-visible/seam:bg-ring',
+        )}
+      />
     </div>
-    {dragging ? createPortal(<div className={`${dragShield} bc-no-drag`} aria-hidden="true" />, document.body) : null}
+    {dragging ? createPortal(<div className="cc-no-drag fixed inset-0 z-[10000] cursor-col-resize select-none" aria-hidden="true" />, document.body) : null}
   </>;
 }

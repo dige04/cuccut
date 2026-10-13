@@ -5,7 +5,7 @@ import type { SpaceMessages } from './space-copy.ts';
 
 export const de: SpaceMessages = {
   searchPlaceholder: "Namen, Dateien oder gesprochenen Videoinhalt suchen",
-  searchLabel: "Space durchsuchen",
+  searchLabel: "Bibliothek durchsuchen",
 
   openVideo: "Video öffnen",
   viewInfo: "Informationen anzeigen",
@@ -132,7 +132,7 @@ export const de: SpaceMessages = {
   trashVideoTitle: "Dieses Video löschen?",
   trashVideoBody: "Der gesamte Videoordner gelangt in den Projektpapierkorb und ist wiederherstellbar. Verknüpfte Originalmaterialien bleiben unverändert.",
   trashVideoRelated: (n: number) =>
-    `${count(n, "Eintrag", "Einträge")} daraus exportiert oder erzeugt bleiben in Space und werden nicht mit dem Video gelöscht:`,
+    `${count(n, "Eintrag", "Einträge")} daraus exportiert oder erzeugt bleiben in der Bibliothek und werden nicht mit dem Video gelöscht:`,
   trashVideoConfirm: "Video löschen",
 
   purgeTitle: "Dauerhaft löschen?",
@@ -148,7 +148,7 @@ export const de: SpaceMessages = {
   renameTitle: "Umbenennen",
   renameLabel: "Anzeigename",
   renameHint: (fileName: string) =>
-    `Ändert nur den Namen in Space; die Datei bleibt unverändert. Leeren stellt wieder her: „${fileName}“.`,
+    `Ändert nur den Namen in der Bibliothek; die Datei bleibt unverändert. Leeren stellt wieder her: „${fileName}“.`,
   save: "Speichern",
 
   changedDialogTitle: "Das Quellvideo wurde geändert",
@@ -181,10 +181,10 @@ export const de: SpaceMessages = {
   openForEdit: "Zum Bearbeiten öffnen",
   newVideo: "Neues Video",
   revealUnavailable: "Diese Datei liegt in keinem Projekt- oder Sitzungsordner; kein Speicherort anzeigbar",
-  sidebarLabel: "Space-Kategorien",
+  sidebarLabel: "Kategorien der Bibliothek",
   kindsHeader: "Kategorien",
   mineHeader: "Organisieren",
-  sidebarNote: "Space zeigt Videos, Materialien und Ergebnisse aller Projekte. Dateien bleiben in ihren Projektordnern. Aus einem Video exportierte oder erzeugte Dateien werden beim Video gebündelt; nach Typ angezeigt erscheinen sie einzeln.",
+  sidebarNote: "Die Bibliothek zeigt Videos, Materialien und Ergebnisse aller Projekte. Dateien bleiben in ihren Projektordnern. Aus einem Video exportierte oder erzeugte Dateien werden beim Video gebündelt; nach Typ angezeigt erscheinen sie einzeln.",
   all: "Alle",
   emptyFiltered: "Keine passenden Einträge",
   emptyTrash: "Papierkorb ist leer",
@@ -204,14 +204,14 @@ export const de: SpaceMessages = {
   issuesTitle: (n: number) => (pluralForm('de', n, { one: "1 Ordner wurde nicht vollständig aufgelistet", other: `${n} Ordner wurden nicht vollständig aufgelistet` })),
   issueTruncated: (detail: string) => `Zu viele Dateien; nur teilweise aufgelistet: ${detail}`,
   issueUnreadable: (detail: string) => `Lesen fehlgeschlagen: ${detail}`,
-  preparing: "Space wird vorbereitet…",
+  preparing: "Bibliothek wird vorbereitet…",
   preparingBody: "Beim ersten Mal müssen Projektordner gescannt werden. Dies dauert einen Moment.",
 
   createIn: (project: string, hint: string) => `In „${project}“ · ${hint}`,
 
   whichProjectFor: (label: string) => `${label}: welches Projekt`,
   entryActions: (name: string) => `Aktionen für „${name}“`,
-  entriesLabel: "Space-Einträge",
+  entriesLabel: "Bibliothekseinträge",
   columnName: "Name",
   columnKind: "Typ",
   columnSource: "Quelle",

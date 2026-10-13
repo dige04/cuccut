@@ -58,7 +58,7 @@ const tokenBox = style({
   display: 'block',
   marginTop: 8,
   padding: 12,
-  borderRadius: 'default',
+  borderRadius: '[12px]',
   backgroundColor: 'gray-75',
   borderWidth: 1,
   borderStyle: 'solid',

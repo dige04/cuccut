@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const it: StageBarMessages = {
-  bar: 'Controlli dell’anteprima',
   ratio: 'Rapporto d’aspetto',
   ratioReadOnly: 'Rapporto d’aspetto · il video è di sola lettura',
   ratioApplied: (ratio: string) => `Rapporto d’aspetto cambiato in ${ratio}`,

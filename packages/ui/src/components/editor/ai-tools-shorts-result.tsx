@@ -257,7 +257,7 @@ export function ShortsResultPage({ videoId, host }: { videoId: Id; host: Id }) {
           </span>
         ) : null}
       </PanelHead>
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <div className={lead}>
           <span>{S.lead}</span>
         </div>

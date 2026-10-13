@@ -166,13 +166,13 @@ export function DubRunHead({ live }: { live: DubLive }) {
       <div className={titleRow}>
         <span className={dot({ isQueued: queued })} aria-hidden />
         <span className={title}>{heading}</span>
-        {pct === null ? null : <span className={`${percent} bc-tabular`}>{pct}%</span>}
+        {pct === null ? null : <span className={`${percent} cc-tabular`}>{pct}%</span>}
       </div>
       <ProgressBar size="S" aria-label={heading} isIndeterminate={pct === null} {...(pct === null ? {} : { value: pct })} styles={bar} />
       {!submitting && metaParts.length ? (
         <div className={meta}>
           {metaParts.map((part, index) => (
-            <span key={part} className={index === 0 && progress?.units ? 'bc-tabular' : undefined}>
+            <span key={part} className={index === 0 && progress?.units ? 'cc-tabular' : undefined}>
               {index ? <span className={sep}>· </span> : null}
               {part}
             </span>

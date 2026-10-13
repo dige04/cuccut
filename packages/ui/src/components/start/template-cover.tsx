@@ -4,7 +4,7 @@ import { HOME_COPY } from '../../copy.ts';
 import { isExample, type HomeTemplate } from '../../model/home-templates.ts';
 import { useTemplateFileUrl } from './use-templates.ts';
 
-// 统一的 16:10 格子：竖屏、方形的画面两边留空，一排卡片才对得齐。几何在 app.css（.bc-tpl-cover）。
+// 统一的 16:10 格子：竖屏、方形的画面两边留空，一排卡片才对得齐。几何在 app.css（.cc-tpl-cover）。
 const box = style({ backgroundColor: 'gray-100' });
 // 作品示例的小标识：与卡片上「已选」同一份几何。
 const kindBadge = style({
@@ -71,19 +71,19 @@ export function TemplateCover({
   const at = slide == null ? null : slide % count;
   const image = useTemplateFileUrl(template.id, slide == null ? template.cover : null);
   return (
-    <span className={`bc-tpl-cover ${box}`} data-size={size} aria-hidden>
-      <span className={`bc-tpl-art ${art({ tone: template.tone })}`} data-ratio={template.ratio ?? '16:9'}>
-        {size !== 'xs' ? <span className="bc-tpl-art__kicker">{at == null ? template.kicker : `${at + 1} / ${count}`}</span> : null}
-        <span className="bc-tpl-art__fig" data-fig={template.figure}>
+    <span className={`cc-tpl-cover ${box}`} data-size={size} aria-hidden>
+      <span className={`cc-tpl-art ${art({ tone: template.tone })}`} data-ratio={template.ratio ?? '16:9'}>
+        {size !== 'xs' ? <span className="cc-tpl-art__kicker">{at == null ? template.kicker : `${at + 1} / ${count}`}</span> : null}
+        <span className="cc-tpl-art__fig" data-fig={template.figure}>
           <i />
           <i />
           <i />
           <i />
         </span>
-        {size !== 'xs' ? <span className="bc-tpl-art__word">{at == null ? template.title : template.beats[at]}</span> : null}
-        {size !== 'xs' ? <span className="bc-tpl-art__line" /> : null}
+        {size !== 'xs' ? <span className="cc-tpl-art__word">{at == null ? template.title : template.beats[at]}</span> : null}
+        {size !== 'xs' ? <span className="cc-tpl-art__line" /> : null}
       </span>
-      {image.url ? <img className="bc-tpl-cover__image" src={image.url} alt="" decoding="async" onError={image.fail} /> : null}
+      {image.url ? <img className="cc-tpl-cover__image" src={image.url} alt="" decoding="async" onError={image.fail} /> : null}
       {children}
     </span>
   );

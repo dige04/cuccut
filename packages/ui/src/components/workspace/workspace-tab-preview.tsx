@@ -1,56 +1,19 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { tabPreviewPosition } from '../../model/shell-peek.ts';
 import { useWorkspaceOverlay } from './workspace-overlay.ts';
 
-/** 宽 280（同 model/shell-peek.ts `TAB_PREVIEW_WIDTH`；宏只收字面量）。 */
-const card = style({
-  position: 'fixed',
-  zIndex: 60,
-  width: 280,
-  boxSizing: 'border-box',
-  overflow: 'hidden',
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: '[10px]',
-  backgroundColor: 'gray-25',
-  // 卡片挂在 body 上、在 S2 Provider 之外：字体自己给。
-  font: 'ui-sm',
-  color: 'gray-900',
-  boxShadow: 'elevated',
-  pointerEvents: 'none',
-});
-/** 缩略图区：底边分隔线与克隆的缩放见 app.css `.cc-tab-preview-image`。 */
-const image = style({
-  position: 'relative',
-  height: 175,
-  overflow: 'hidden',
-  backgroundColor: 'gray-50',
-  '--cc-tab-preview-line': { type: 'borderColor', value: 'gray-100' },
-});
-const titleText = style({
-  display: 'block',
-  overflow: 'hidden',
-  whiteSpace: 'nowrap',
-  textOverflow: 'ellipsis',
-  paddingTop: 8,
-  paddingX: 12,
-  fontSize: '[12px]',
-  fontWeight: 'bold',
-});
-const pathText = style({
-  display: 'block',
-  overflow: 'hidden',
-  whiteSpace: 'nowrap',
-  textOverflow: 'ellipsis',
-  paddingTop: 4,
-  paddingBottom: 8,
-  paddingX: 12,
-  fontSize: '[11px]',
-  color: 'gray-600',
-});
+/*
+ * The hover card (agentcut popover surface: solid, 16px corners, hairline, raised shadow). Width 280, the same as
+ * model/shell-peek.ts `TAB_PREVIEW_WIDTH`. It hangs off <body>, outside the S2 provider, so it sets its own font.
+ */
+const card =
+  'pointer-events-none fixed z-[60] box-border w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-popover p-1.5 font-sans text-sm text-foreground shadow-(--glass-shadow-raised)';
+/** The thumbnail; the clone's scaling is in app.css `.cc-tab-preview-image`. A pane that could not be copied shows none. */
+const image =
+  'relative h-[175px] overflow-hidden rounded-xl bg-background [--cc-tab-preview-line:transparent] data-[empty]:hidden';
+const titleText = 'block truncate px-2 pt-2 text-xs font-medium';
+const pathText = 'block truncate px-2 pt-0.5 pb-1.5 text-[11px] text-muted-foreground';
 
 /**
  * 页签悬停缩略卡（产品设计 §3.3「页签条」；原型 home-shell-chrome.jsx `WorkspaceTabPreview`）：把该页签的面板克隆成

@@ -37,15 +37,10 @@ import { addAgentProvider } from '../../runtime/agent-commands.ts';
 import { useRuntime } from '../../runtime/context.tsx';
 import { useConnection } from '../../state/connection-store.ts';
 import { CATALOG_COPY, CUSTOM_DIALOG_COPY } from './agent-copy.ts';
-import { SectionHeading } from './agent-panels.tsx';
+import { PANEL, SubHeading } from './settings-ui.tsx';
 
 // 目录卡（settings-agent.css .agcat）：搜索条一行，下面是可滚动的列表，行之间一条分隔线。
 const card = style({
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: 'lg',
-  backgroundColor: 'layer-1',
   overflow: 'hidden',
   minWidth: 0,
 });
@@ -133,7 +128,7 @@ export function AgentCatalogSection({ onAdded }: { onAdded(id: DriverId): void }
   if (web) {
     return (
       <>
-        <SectionHeading title={CATALOG_COPY.heading} />
+        <SubHeading title={CATALOG_COPY.heading} />
         <p className={webNote}>{CATALOG_COPY.webNote}</p>
       </>
     );
@@ -157,7 +152,7 @@ export function AgentCatalogSection({ onAdded }: { onAdded(id: DriverId): void }
 
   return (
     <section aria-labelledby="agent-catalog-title">
-      <SectionHeading
+      <SubHeading
         title={CATALOG_COPY.heading}
         hint={CATALOG_COPY.hint}
         action={
@@ -167,7 +162,7 @@ export function AgentCatalogSection({ onAdded }: { onAdded(id: DriverId): void }
           </ActionButton>
         }
       />
-      <div className={card}>
+      <div className={`${card} ${PANEL}`}>
         <div className={searchBar}>
           <SearchField
             aria-label={CATALOG_COPY.search}

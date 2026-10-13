@@ -378,7 +378,7 @@ export function TimelineChapters({ sequence }: { sequence: Sequence }) {
       </span>
       {tip ? (
         <div className={bubble} style={{ left: tipLeft }}>
-          <span className={`${bubbleTime} bc-tabular`}>{tip.time}</span>
+          <span className={`${bubbleTime} cc-tabular`}>{tip.time}</span>
           <span className={bubbleTitle}>{tip.title}</span>
         </div>
       ) : null}

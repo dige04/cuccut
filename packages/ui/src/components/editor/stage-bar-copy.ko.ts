@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const ko: StageBarMessages = {
-  bar: '미리보기 컨트롤',
   ratio: '화면 비율',
   ratioReadOnly: '화면 비율 · 동영상이 읽기 전용입니다',
   ratioApplied: (ratio: string) => `화면 비율을 ${ratio}(으)로 바꿨습니다`,

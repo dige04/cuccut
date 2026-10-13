@@ -163,10 +163,10 @@ export function StaleRefreshView({ live }: { live: NonNullable<ReturnType<typeof
         <div className={titleRow}>
           <span className={liveDot({ isQueued: queued })} aria-hidden />
           <span className={headTitle}>{heading}</span>
-          {pct === null ? null : <span className={`${percent} bc-tabular`}>{pct}%</span>}
+          {pct === null ? null : <span className={`${percent} cc-tabular`}>{pct}%</span>}
         </div>
         <ProgressBar size="S" aria-label={heading} isIndeterminate={pct === null} {...(pct === null ? {} : { value: pct })} styles={field} />
-        {progress?.units?.total ? <span className={`${activity} bc-tabular`}>{T.stepUnits(progress.units.done, progress.units.total)}</span> : null}
+        {progress?.units?.total ? <span className={`${activity} cc-tabular`}>{T.stepUnits(progress.units.done, progress.units.total)}</span> : null}
         {job && isJobLive(job) ? (
           <div>
             <Button size="S" variant="secondary" onPress={() => void cancelTranslate(job.jobId)}>

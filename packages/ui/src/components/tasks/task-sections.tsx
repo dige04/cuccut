@@ -22,14 +22,17 @@ import { jobErrorText } from '../../model/localized-text.ts';
 export const sectionTitle = style({ font: 'ui-xs', fontWeight: 'bold', color: 'gray-600', margin: 0, marginTop: 28 });
 /** 原型 `.card.card--layer`。 */
 const layer = style({
-  marginTop: 8,
-  borderRadius: 'lg',
+  borderRadius: '[24px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
   backgroundColor: 'gray-50',
+  overflow: 'hidden',
 });
-const rows = style({ display: 'flex', flexDirection: 'column', paddingX: 16 });
+/** A detail section in the page's column (agentcut `Panel` with its small heading above). */
+const panel = style({ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 });
+const panelTitle = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900', margin: 0, paddingX: 4 });
+const rows = style({ display: 'flex', flexDirection: 'column', paddingX: 20 });
 const row = style({
   display: 'flex',
   alignItems: { default: 'center', top: 'start' },
@@ -85,17 +88,17 @@ const thumbMore = style({
   backgroundColor: 'gray-900',
   color: 'gray-25',
 });
-const facts = style({ display: 'flex', flexDirection: 'column', paddingX: 16, paddingY: 8 });
+const facts = style({ display: 'flex', flexDirection: 'column', paddingX: 20, paddingY: 12 });
 const fact = style({ display: 'flex', alignItems: 'baseline', paddingY: 4 });
 const factLabel = style({ font: 'ui-sm', fontWeight: 'medium', color: 'gray-700', width: 88, flexShrink: 0 });
 const factValue = style({ font: 'ui', color: 'gray-800', minWidth: 0, overflowWrap: 'anywhere', userSelect: 'text' });
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <>
-      <h2 className={sectionTitle}>{title}</h2>
+    <section className={panel}>
+      <h2 className={panelTitle}>{title}</h2>
       <div className={layer}>{children}</div>
-    </>
+    </section>
   );
 }
 

@@ -18,8 +18,7 @@ const card = style({
   gap: 8,
   paddingX: 16,
   paddingY: 12,
-  marginStart: 36,
-  borderRadius: '[10px]',
+  borderRadius: '[20px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'orange-300',
@@ -41,7 +40,7 @@ const subject = style({
 const why = style({ margin: 0, font: 'ui-sm', color: 'gray-700', overflowWrap: 'anywhere' });
 const answers = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 });
 /** 决定过的审批收成一行 quiet Disclosure（原型 `BCDisclosure`，agent-thread.jsx:167-169）。 */
-const decided = style({ marginStart: 36, alignSelf: 'stretch' });
+const decided = style({ alignSelf: 'stretch' });
 const decidedTitle = style({ display: 'flex', alignItems: 'center', gap: 4, font: 'ui-sm', color: 'gray-600' });
 const decidedBody = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 const sectionHead = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', font: 'ui-xs', color: 'gray-600' });

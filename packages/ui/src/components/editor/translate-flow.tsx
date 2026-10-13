@@ -239,7 +239,7 @@ export function TranslateFlow({
   return (
     <>
       <PanelHead title={C.title} back={{ label: backLabel, onPress: onBack }} />
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <div className={secHead}>
           <h3 className={secTitle}>{C.target}</h3>
         </div>

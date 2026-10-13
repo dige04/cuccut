@@ -20,11 +20,6 @@ const en = {
   language: 'Language',
   languageDesc: 'Takes effect right away, no restart needed.',
   languageSystem: (current: string) => `System (${current})`,
-  appearance: 'Appearance',
-  appearanceDesc: 'Only affects CucCut windows on this computer.',
-  schemeSystem: 'System',
-  schemeLight: 'Light',
-  schemeDark: 'Dark',
 
   saveFailed: (message: string) => `Couldn't save: ${message}`,
 

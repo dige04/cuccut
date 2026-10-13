@@ -86,7 +86,7 @@ export function AiToolAgentRun({ videoId, tool, run, onBack }: { videoId: Id; to
           </Badge>
         )}
       </PanelHead>
-      <div className={`${body} bc-scroll`}>
+      <div className={`${body} cc-scroll`}>
         <div className={stack}>
           <div className={card} role="status" aria-live="polite">
             <span className={cardTitle}>{C.agentHanded(harnessLabel(driver, conversation?.model ?? null))}</span>

@@ -11,7 +11,8 @@
   top: 4px;
   bottom: 4px;
   box-sizing: border-box;
-  border-radius: 0.25rem;
+  /* agentcut's clip chips: rounded-md. */
+  border-radius: 6px;
   border-style: solid;
   overflow: hidden;
   display: flex;
@@ -74,7 +75,7 @@
   cursor: grabbing;
 }
 
-/* 播放头：一条红线，竖贯轨道区，中心落在 left 上。不接指针事件，点刻度尺定位。 */
+/* The playhead: one accent line through the tracks (agentcut's yellow), centred on `left`; no pointer events, the ruler seeks. */
 .cc-playhead {
   position: absolute;
   top: 0;
@@ -82,7 +83,7 @@
   width: 0;
   z-index: 5;
   pointer-events: none;
-  border-inline-start: 1.5px solid #e23b30;
+  border-inline-start: 1.5px solid var(--primary);
   margin-inline-start: -0.75px;
 }
 /*
@@ -101,7 +102,7 @@
   /* 抓手旗（原型 ui.css `.ph__flag`）：上半是圆角矩形，下半收成指向竖线的三角；圆角留给上沿，clip-path 只切下沿。 */
   border-radius: 3px 3px 0 0;
   clip-path: polygon(0 0, 100% 0, 100% 10px, 50% 100%, 0 10px);
-  background: #e23b30;
+  background: var(--primary);
 }
 
 /* 吸附时的参考线。 */
@@ -112,7 +113,7 @@
   width: 0;
   z-index: 4;
   pointer-events: none;
-  border-inline-start: 1px dashed light-dark(#3b63fb, #8ea8ff);
+  border-inline-start: 1px dashed rgb(255 255 255 / 85%);
 }
 
 /* 舞台把手（原型 ui.css .hnd / .rot）：触屏没有悬停，4px 宽的条子点不着，铺一块 20×20 的隐形热区。 */
@@ -313,4 +314,15 @@ html.cc-col-resize * {
   position: absolute;
   box-sizing: border-box;
   border: 1px dashed rgb(255 255 255 / 80%);
+}
+
+/*
+ * The bar under the frame (agentcut's TOOLBAR_ROW): the selection's toolbar docks here; with nothing docked the row shows
+ * its hint. The row keeps its height either way, so picking something never resizes the preview.
+ */
+.cc-toolbar-row:has(> .cc-toolbar-host > *) > .cc-toolbar-hint {
+  display: none;
+}
+.cc-toolbar-host:empty {
+  display: none;
 }

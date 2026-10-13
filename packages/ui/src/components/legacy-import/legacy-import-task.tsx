@@ -30,7 +30,7 @@ import { useShell } from '../../state/shell-store.ts';
 import { sectionTitle } from '../tasks/task-sections.tsx';
 import { TK } from '../tasks/tasks-copy.ts';
 import { useNow } from '../use-now.ts';
-import { UtilityPage } from '../utility-page.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
 
 /*
  * 旧版项目导入这一轮的界面（设计稿 legacy-import-task.jsx；进度、分组、原因与补救的文案在 model/legacy-import-run.ts）：
@@ -322,7 +322,7 @@ export function LegacyImportDetail({ row, run, backButton }: { row: TaskRow; run
   const detail = row.live ? runPhase(run).detail : null;
 
   return (
-    <UtilityPage kind="tasks" before={backButton} title={row.title}>
+    <UtilityShell kind="tasks" before={backButton} title={row.title}>
       <p className={statusLine}>{[row.where, agoLabel(row.startedAt, now)].filter(Boolean).join(' · ')}</p>
       {row.live && typeof row.progress === 'number' ? (
         <div className={progress}>
@@ -426,7 +426,7 @@ export function LegacyImportDetail({ row, run, backButton }: { row: TaskRow; run
           </div>
         </>
       ) : null}
-    </UtilityPage>
+    </UtilityShell>
   );
 }
 

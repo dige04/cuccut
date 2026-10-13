@@ -10,15 +10,17 @@ import { useWaitingCount } from './use-waiting-count.ts';
 /*
  * 设置 › 关于的更新状态块（设计稿 settings-update.jsx `UpdateStatus`、settings-update.css `.upd`）：一行状态、进度、
  * 版本说明（最多 6 行）、按钮与「前往下载页」。宿主没有 `updates` 面（网页）时不出现。
+ * Drawn as its own solid panel, left-aligned like every other settings panel.
  */
 
-const block = style({ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: 'full', marginTop: 12 });
+/** A solid panel of its own under the versions (agentcut settings `Panel`: 24px corners, hairline ring). */
+const block = 'flex min-w-0 flex-col items-start gap-2.5 rounded-3xl bg-card px-5 py-4 ring-1 ring-foreground/10';
 const line = style({
   font: { default: 'ui-sm', tone: { strong: 'ui' } },
   fontWeight: { default: 'normal', tone: { strong: 'bold' } },
   color: { default: 'gray-700', tone: { positive: 'positive-900', negative: 'negative-900', muted: 'gray-600', strong: 'gray-900' } },
 });
-const progress = style({ width: 240 });
+const progress = style({ width: 'full', maxWidth: 400 });
 const notes = style({
   boxSizing: 'border-box',
   width: 'full',
@@ -26,7 +28,7 @@ const notes = style({
   margin: 0,
   paddingX: 12,
   paddingY: 8,
-  borderRadius: 'lg',
+  borderRadius: '[14px]',
   backgroundColor: 'gray-75',
   listStyleType: 'none',
   textAlign: 'start',
@@ -34,7 +36,7 @@ const notes = style({
   color: 'gray-700',
   userSelect: 'text',
 });
-const buttons = style({ display: 'flex', alignItems: 'center', gap: 12 });
+const buttons = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginTop: 4 });
 const sub = style({ font: 'ui-xs', color: 'gray-600' });
 
 export function UpdateStatus() {

@@ -294,7 +294,7 @@ export async function requestSample(client: Client, family: string, register: Fa
     return set({ state: 'none' });
   }
   if (!sample.data) return set({ state: 'none' });
-  const name = `bc-sample-${key.replace(/[^a-z0-9]+/g, '-')}`;
+  const name = `cc-sample-${key.replace(/[^a-z0-9]+/g, '-')}`;
   try {
     await register(name, decodeBase64(sample.data));
     set({ state: 'ready', css: `"${name}"` });

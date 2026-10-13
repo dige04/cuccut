@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 
 export const ko: SpaceMessages = {
   searchPlaceholder: '이름, 파일 또는 영상 속 말 검색',
-  searchLabel: 'Space 검색',
+  searchLabel: '라이브러리 검색',
 
   // 列表与菜单
   openVideo: '영상 열기',
@@ -136,7 +136,7 @@ export const ko: SpaceMessages = {
   // 删除视频（产品设计 §4.9）
   trashVideoTitle: '이 영상을 삭제할까요?',
   trashVideoBody: '영상 폴더 전체가 프로젝트의 휴지통으로 이동하며 복원할 수 있습니다. 연결된 원본 소재는 그대로 남습니다.',
-  trashVideoRelated: (n: number) => `이 영상에서 내보내거나 생성한 항목 ${n}개는 Space에 남으며 영상과 함께 삭제되지 않습니다:`,
+  trashVideoRelated: (n: number) => `이 영상에서 내보내거나 생성한 항목 ${n}개는 라이브러리에 남으며 영상과 함께 삭제되지 않습니다:`,
   trashVideoConfirm: '영상 삭제',
 
   // 彻底删除
@@ -154,7 +154,7 @@ export const ko: SpaceMessages = {
   renameTitle: '이름 변경',
   renameLabel: '표시 이름',
   renameHint: (fileName: string) =>
-    `Space에 표시되는 이름만 바뀌며 파일 자체는 그대로입니다. 비워 두면 원래 이름(“${fileName}”)으로 돌아갑니다.`,
+    `라이브러리에 표시되는 이름만 바뀌며 파일 자체는 그대로입니다. 비워 두면 원래 이름(“${fileName}”)으로 돌아갑니다.`,
   save: '저장',
 
   // 来源视频改过（产品设计 §4.6）
@@ -190,10 +190,10 @@ export const ko: SpaceMessages = {
   openForEdit: '열어서 편집',
   newVideo: '새 영상',
   revealUnavailable: '이 파일은 어떤 프로젝트나 세션 폴더에도 없어 표시할 위치가 없습니다',
-  sidebarLabel: 'Space 분류',
+  sidebarLabel: '라이브러리 분류',
   kindsHeader: '분류',
   mineHeader: '정리',
-  sidebarNote: 'Space는 모든 프로젝트의 영상, 소재, 결과물을 보여 줍니다. 파일은 각 프로젝트 폴더에 그대로 있습니다. 영상에서 내보내거나 생성한 파일은 해당 영상에 묶이며, 유형별로 보면 하나씩 표시됩니다.',
+  sidebarNote: '라이브러리는 모든 프로젝트의 영상, 소재, 결과물을 보여 줍니다. 파일은 각 프로젝트 폴더에 그대로 있습니다. 영상에서 내보내거나 생성한 파일은 해당 영상에 묶이며, 유형별로 보면 하나씩 표시됩니다.',
   all: '전체',
   emptyFiltered: '일치하는 항목이 없습니다',
   emptyTrash: '휴지통이 비어 있습니다',
@@ -212,12 +212,12 @@ export const ko: SpaceMessages = {
   issuesTitle: (n: number) => `폴더 ${n}개가 모두 나열되지 않았습니다`,
   issueTruncated: (detail: string) => `파일이 너무 많아 일부만 나열했습니다: ${detail}`,
   issueUnreadable: (detail: string) => `읽을 수 없음: ${detail}`,
-  preparing: 'Space 준비 중…',
+  preparing: '라이브러리 준비 중…',
   preparingBody: '처음에는 프로젝트 폴더를 스캔해야 하므로 잠시 걸립니다.',
   createIn: (project: string, hint: string) => `“${project}” 프로젝트에 · ${hint}`,
   whichProjectFor: (label: string) => `${label}: 어느 프로젝트에`,
   entryActions: (name: string) => `“${name}” 메뉴`,
-  entriesLabel: 'Space 항목',
+  entriesLabel: '라이브러리 항목',
   columnName: '이름',
   columnKind: '유형',
   columnSource: '출처',

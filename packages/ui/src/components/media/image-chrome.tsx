@@ -43,11 +43,11 @@ export function ImageChrome({
   onPanorama: () => void;
 }) {
   return (
-    <header className="bc-image-header">
+    <header className="cc-image-header">
       <MenuTrigger>
         <ActionButton aria-label={M.image}>
           <Text>
-            <span className="bc-image-button-label">
+            <span className="cc-image-button-label">
               <ImageIcon />
               {view === 'canvas' ? M.canvasView : M.image}
               <ChevronDown />
@@ -61,13 +61,13 @@ export function ImageChrome({
           </MenuItem>
         </Menu>
       </MenuTrigger>
-      <span className="bc-image-name" title={name}>
+      <span className="cc-image-name" title={name}>
         {name}
       </span>
       <MenuTrigger align="end">
         <ActionButton aria-label={M.fit}>
           <Text>
-            <span className="bc-image-button-label">
+            <span className="cc-image-button-label">
               {Math.round(percent)}%<ChevronDown />
             </span>
           </Text>
@@ -86,7 +86,7 @@ export function ImageChrome({
       <MenuTrigger align="end">
         <ActionButton aria-label={M.more}>
           <Text>
-            <span className="bc-image-button-label">
+            <span className="cc-image-button-label">
               {M.more}
               <ChevronDown />
             </span>
@@ -139,7 +139,7 @@ export function ImageTools({
   onSelect: () => void;
 }) {
   return (
-    <div className="bc-image-tools" role="toolbar" aria-label={M.markup}>
+    <div className="cc-image-tools" role="toolbar" aria-label={M.markup}>
       {!gif && (
         <ActionButton size="S" isQuiet onPress={onMarkup}>
           <Edit />
@@ -203,7 +203,7 @@ export function ImageRail({
     }
   }, [selected]);
   return (
-    <span ref={ref} className="bc-image-rail" role="group" aria-label={M.gallery}>
+    <span ref={ref} className="cc-image-rail" role="group" aria-label={M.gallery}>
       {files.map((file, index) => (
         <ImageThumbnail
           key={targetKey(file.target)}
@@ -260,7 +260,7 @@ export function ImageThumbnail({
   }, [runtime, key, file.handle]);
   return (
     <ActionButton
-      UNSAFE_className="bc-image-thumb"
+      UNSAFE_className="cc-image-thumb"
       aria-label={file.name}
       aria-current={selected ? 'true' : undefined}
       onPress={onSelect}

@@ -116,8 +116,8 @@ export function ImagePanorama({ url, active = true, onClose }: { url: string; ac
     render.current();
   };
   return (
-    <section ref={root} className={`${mediaTheme} bc-image-panorama`} aria-label={M.panorama}>
-      <div className="bc-image-header">
+    <section ref={root} className={`${mediaTheme} cc-image-panorama`} aria-label={M.panorama}>
+      <div className="cc-image-header">
         <R.ActionButton onPress={() => zoom(fov - 10)}>{M.zoomIn}</R.ActionButton>
         <R.ActionButton onPress={() => zoom(fov + 10)}>{M.zoomOut}</R.ActionButton>
         <span>{fov}°</span>

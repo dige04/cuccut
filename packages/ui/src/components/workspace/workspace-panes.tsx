@@ -27,6 +27,11 @@ const panes = style({
   minWidth: 0,
   minHeight: 0,
 });
+/**
+ * The open tab sits in a solid card in the centre of the session layout (agentcut: content surfaces stay solid). The
+ * video editor lays out its own cards (assets, preview, timeline), so around it the area stays bare.
+ */
+const PANES_CARD = 'overflow-hidden rounded-3xl border border-border/60 bg-card';
 const pane = style({
   display: { default: 'flex', isHidden: 'none' },
   flexDirection: 'column',
@@ -86,7 +91,11 @@ export function WorkspacePanes({
   const editorKey = current?.kind === 'video' && targetKey(current.target) === openKey ? itemKey(current) : null;
 
   return (
-    <div ref={rootRef} className={panes({ isHidden: !visible && !park })} style={park ? { ...PARKED_AREA, width: parkedWidth.current } : undefined}>
+    <div
+      ref={rootRef}
+      // Keyed on the tab's kind, not on the editor being ready, so a video tab does not lose its card once it loads.
+      className={`${panes({ isHidden: !visible && !park })} ${current?.kind === 'video' ? '' : PANES_CARD}`}
+      style={park ? { ...PARKED_AREA, width: parkedWidth.current } : undefined}>
       {tabs.map((item) => {
         const key = itemKey(item);
         if (key === editorKey) return null;

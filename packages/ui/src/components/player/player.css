@@ -1,29 +1,29 @@
 /* 播放器里样式宏表达不了的部分：随画面宽度缩放的字幕字号、全屏、字幕列表的行。颜色随明暗主题走（light-dark）。 */
 
-.bc-player-screen:fullscreen {
+.cc-player-screen:fullscreen {
   display: flex;
   flex-direction: column;
   background: #000;
   padding: 0 16px 12px;
 }
-.bc-player-screen:fullscreen .bc-player-stage {
+.cc-player-screen:fullscreen .cc-player-stage {
   flex-grow: 1;
   border-radius: 0;
 }
-.bc-player-screen:fullscreen .bc-player-stage video {
+.cc-player-screen:fullscreen .cc-player-stage video {
   max-height: none;
 }
-.bc-player-screen:fullscreen .bc-player-controls {
+.cc-player-screen:fullscreen .cc-player-controls {
   color: #fff;
   color-scheme: dark;
 }
 
-.bc-player-stage {
+.cc-player-stage {
   container-type: inline-size;
 }
 
 /* 叠加的字幕：字号按画面宽度缩放，长句换行。 */
-.bc-captions {
+.cc-captions {
   position: absolute;
   inset-inline: 5%;
   bottom: 6%;
@@ -36,7 +36,7 @@
   line-height: 1.35;
   text-align: center;
 }
-.bc-captions span {
+.cc-captions span {
   max-width: 100%;
   padding: 0.1em 0.45em;
   border-radius: 0.2em;
@@ -46,27 +46,27 @@
   overflow-wrap: anywhere;
 }
 /* 没有画面（音频）时，当前句直接放大写在舞台上。 */
-.bc-captions[data-audio] {
+.cc-captions[data-audio] {
   inset: 0;
   justify-content: center;
   padding: 16px;
   font-size: clamp(14px, 4.4cqw, 28px);
 }
-.bc-captions[data-audio] span {
+.cc-captions[data-audio] span {
   background: none;
   color: inherit;
 }
 
-.bc-tabular {
+.cc-tabular {
   font-variant-numeric: tabular-nums;
 }
 
 /* 字幕列表的一行：序号与时间一行，文字一行；当前句高亮，播过的变淡。 */
-.bc-cue {
+.cc-cue {
   content-visibility: auto;
   contain-intrinsic-size: auto 52px;
 }
-.bc-cue-button {
+.cc-cue-button {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -80,28 +80,28 @@
   text-align: start;
   cursor: default;
 }
-.bc-cue-button:hover {
+.cc-cue-button:hover {
   background: light-dark(rgb(0 0 0 / 4%), rgb(255 255 255 / 6%));
 }
-.bc-cue-button:focus-visible {
+.cc-cue-button:focus-visible {
   outline: 2px solid light-dark(#3b63fb, #8ea8ff);
   outline-offset: -2px;
 }
-.bc-cue-button[data-active] {
+.cc-cue-button[data-active] {
   background: light-dark(#e5ecff, rgb(84 118 255 / 22%));
   box-shadow: inset 0 0 0 1px light-dark(#8ea8ff, rgb(142 168 255 / 50%));
 }
-.bc-cue-button[data-played] .bc-cue-text {
+.cc-cue-button[data-played] .cc-cue-text {
   color: light-dark(#8f8f8f, #8a8a8a);
 }
-.bc-cue-meta {
+.cc-cue-meta {
   display: flex;
   gap: 8px;
   font-size: 11px;
   color: light-dark(#6d6d6d, #a8a8a8);
   font-variant-numeric: tabular-nums;
 }
-.bc-cue-text {
+.cc-cue-text {
   font-size: 14px;
   line-height: 1.5;
   white-space: pre-line;

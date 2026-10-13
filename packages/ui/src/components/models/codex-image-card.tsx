@@ -17,6 +17,7 @@ import {
   type CodexImageRowState,
 } from '../settings/codex-image.ts';
 import { CODEX_CARD_COPY, CLOUD_COPY, MODELS_PAGE_COPY } from './models-copy.ts';
+import { PANEL } from '../settings/settings-ui.tsx';
 
 /**
  * 「用 Codex 画图」在模型页的两处：图像生成云端页服务商列表的第一张卡（设计稿 settings-cloud.jsx:278-298），
@@ -61,14 +62,9 @@ const card = style({
   alignItems: 'center',
   flexWrap: 'wrap',
   gap: 12,
-  paddingX: 16,
+  paddingX: 20,
   paddingY: 12,
   marginBottom: 8,
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: 'lg',
-  backgroundColor: 'layer-1',
 });
 const text = style({ flexGrow: 1, flexBasis: 0, minWidth: 220, paddingStart: 24 });
 const title = style({ font: 'ui', fontWeight: 'bold', color: 'gray-900' });
@@ -109,7 +105,7 @@ export function CodexImageCard({ codex, isDefault }: { codex: ReturnType<typeof 
   };
 
   return (
-    <section className={card} aria-label={CODEX_CARD_COPY.title}>
+    <section className={`${card} ${PANEL}`} aria-label={CODEX_CARD_COPY.title}>
       <div className={text}>
         <div className={title}>{CODEX_CARD_COPY.title}</div>
         <p className={body}>{desc}</p>

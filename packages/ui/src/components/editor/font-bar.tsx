@@ -35,11 +35,10 @@ import { FONT_COPY as FC } from './font-copy.ts';
 
 const strip = style({
   flexShrink: 0,
-  marginTop: '[10px]',
-  marginX: 12,
-  paddingX: 12,
+  marginBottom: 8,
+  paddingX: 16,
   paddingY: '[6px]',
-  borderRadius: 'default',
+  borderRadius: 'xl',
   font: 'ui-sm',
   backgroundColor: { default: 'gray-100', tone: { ready: 'green-100', notice: 'orange-100' } },
   color: { default: 'gray-900', tone: { ready: 'green-1000', notice: 'orange-1000' } },

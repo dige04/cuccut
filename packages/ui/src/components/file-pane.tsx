@@ -156,7 +156,7 @@ export function FilePane({ target, conversationId, fileNameHint, active = true }
           </TooltipTrigger>
         ) : null}
       </header>
-      <div className={mode === 'audio' || mode === 'video' || mode === 'image' ? playerBody : `${body} bc-scroll`}>
+      <div className={mode === 'audio' || mode === 'video' || mode === 'image' ? playerBody : `${body} cc-scroll`}>
         <FilePreview filePath={absolute??undefined} active={active} key={JSON.stringify(target)} target={target} fileName={fileName} sourceMode={source}
           imagePanel={{ conversationId, gallery, onSelect: image => useShell.getState().replaceFilePane(itemKey({ kind: 'file', target }), image.target) }}
           playback={{ memoryKey }} onResolved={(handle, mode) => setResolved({ handle, mode })} />

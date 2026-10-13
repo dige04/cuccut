@@ -5,7 +5,6 @@ import { memo, useEffect, useState } from 'react';
 import { localizeText, messageSkills, type AttachmentRef, type Id, type MediaHandle, type TimelineItem } from '@cuccut/protocol';
 import { UserMessage as UserBubble } from '@react-spectrum/ai';
 import { ActionButton, Card, Content, Text } from '@react-spectrum/s2';
-import AIMark from '@react-spectrum/s2/icons/AIMark';
 import AlertTriangle from '@react-spectrum/s2/icons/AlertTriangle';
 import Code from '@react-spectrum/s2/icons/Code';
 import Asset from '@react-spectrum/s2/icons/Asset';
@@ -27,7 +26,7 @@ import { AnnotationsToken } from '../annotations-token.tsx';
 type Item<K extends TimelineItem['kind']> = Extract<TimelineItem, { kind: K }>;
 
 const userRow = style({ display: 'flex', flexDirection: 'column', alignItems: 'end', gap: 4 });
-/** 已发送的图片排在正文上方（原型 spectrum.css `.bc-ai-sent-attachments` :53-54）。 */
+/** 已发送的图片排在正文上方（原型 spectrum.css `.cc-ai-sent-attachments` :53-54）。 */
 const sentAttachments = style({ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 });
 const sentPreview = style({ display: 'block', width: 80, height: 64, objectFit: 'cover' });
 const sentPlaceholder = style({
@@ -42,18 +41,7 @@ const sentPlaceholder = style({
 /** 用户消息的气泡是 S2 AI 的 UserMessage（原型 9bd7f6f）；正文保留换行，可以选中复制。 */
 const userText = style({ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', userSelect: 'text' });
 const contextLine = style({ display: 'flex', alignItems: 'center', gap: 4, font: 'ui-xs', color: 'gray-600', maxWidth: '[75%]' });
-const agentRow = style({ display: 'flex', gap: 12, alignItems: 'start' });
-const avatar = style({
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  flexShrink: 0,
-  size: 24,
-  borderRadius: 'full',
-  backgroundColor: 'gray-100',
-  color: 'gray-800',
-  marginTop: 2,
-});
+const agentRow = style({ display: 'flex', alignItems: 'start' });
 const agentBody = style({ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1, minWidth: 0 });
 const actions = style({ display: 'flex', gap: 4, minHeight: 24 });
 const notice = style({
@@ -110,7 +98,7 @@ function SentAttachment({ conversationId, attachment, attachments }: { conversat
   const candidate=(a:AttachmentRef)=>({target:{conversationId,attachmentId:a.id},name:a.fileName});
   const { url } = useAttachmentUrl(conversationId, attachment.id);
   return (
-    <><ActionButton UNSAFE_className="bc-sent-attachment" aria-label={`${IMAGE_COPY.openAttachment}: ${attachment.fileName}`} onPress={()=>{if(isImage(attachment))setPreview(true);else useShell.getState().openPane({kind:'file',target:{conversationId,attachmentId:attachment.id},name:attachment.fileName});}}>
+    <><ActionButton UNSAFE_className="cc-sent-attachment" aria-label={`${IMAGE_COPY.openAttachment}: ${attachment.fileName}`} onPress={()=>{if(isImage(attachment))setPreview(true);else useShell.getState().openPane({kind:'file',target:{conversationId,attachmentId:attachment.id},name:attachment.fileName});}}>
       {url && isImage(attachment) ? (
         <img className={sentPreview} src={url} alt={attachment.fileName} decoding="async" />
       ) : (
@@ -130,7 +118,8 @@ export const UserMessage = memo(function UserMessage({ item, conversationId }: {
   const attachments = item.attachments ?? [];
   return (
     <div className={userRow} data-role="user">
-      <UserBubble>
+      {/* agentcut's user turn: a right-aligned white/8 bubble with a tucked bottom corner (agent-thread.css). */}
+      <UserBubble data-cc-bubble="">
         {attachments.length ? (
           <div className={sentAttachments} role="group" aria-label={sentAttachmentsLabel()}>
             {attachments.map((attachment) => (
@@ -210,8 +199,9 @@ export const UserMessage = memo(function UserMessage({ item, conversationId }: {
 });
 
 /**
- * 智能体回复：头像加 Markdown 正文。流式中没有光标，也没有「正在回复」：文字本身在往外走，这一轮在不在跑看回合页脚。
- * 复制在回合页脚（整轮正文一起复制），不再每条一个。
+ * The agent's reply: Markdown in agentcut's reply bubble (hairline, card at 60%, tucked start-bottom corner; agent-thread.css
+ * `[data-cc-reply]`). No caret or "replying" marker while streaming; the turn footer says whether the turn is running and
+ * holds Copy for the whole turn.
  */
 export const AgentMessage = memo(function AgentMessage({
   item,
@@ -224,10 +214,7 @@ export const AgentMessage = memo(function AgentMessage({
 }) {
   return (
     <div className={agentRow} data-role="agent">
-      <span className={avatar} aria-hidden>
-        <AIMark />
-      </span>
-      <div className={agentBody}>
+      <div className={agentBody} data-cc-reply={item.text ? '' : undefined}>
         {item.text ? <AgentMarkdown text={item.text} streaming={item.streaming} conversationId={conversationId} cwd={cwd} /> : null}
       </div>
     </div>

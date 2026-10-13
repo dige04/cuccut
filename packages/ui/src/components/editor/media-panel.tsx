@@ -323,7 +323,7 @@ export function MediaPanel({ kind, sequence, assets }: { kind: PlaceableKind; se
             </Tab>
           </TabList>
           <TabPanel id="project">
-            <div className={`${sourcePane} bc-scroll`}>{library}</div>
+            <div className={`${sourcePane} cc-scroll`}>{library}</div>
           </TabPanel>
           <TabPanel id="gen">
             <ImageGenPane videoId={videoId} sequence={sequence} assets={assets} />
@@ -336,7 +336,7 @@ export function MediaPanel({ kind, sequence, assets }: { kind: PlaceableKind; se
   return (
     <>
       <PanelHead title={MC.panelTitle(kind)} />
-      <div className={`${panelBody} bc-scroll`}>{library}</div>
+      <div className={`${panelBody} cc-scroll`}>{library}</div>
     </>
   );
 }

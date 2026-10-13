@@ -26,9 +26,9 @@ import { vi } from './tools-copy.vi.ts';
 const en = {
   gallery: {
     title: 'Tools',
-    lede: 'Give it a file or some text and a model processes it directly; results are saved to Space. No Agent connection needed.',
+    lede: 'Give it a file or some text and a model processes it directly; results are saved to the Library. No Agent connection needed.',
     /** 生成任务的结果由 Runtime 自动列进 Space（runtime-core space/space-derive.ts），也能下载另存。 */
-    ledeNote: 'Results are listed in Space automatically (stored on this computer), and you can download a copy too.',
+    ledeNote: 'Results are listed in the Library automatically (stored on this computer), and you can download a copy too.',
     planned: 'Coming soon',
     foot: 'More tools are on the way: format conversion, audio extraction, clipping, batch subtitles and more.',
     loading: 'Loading model status…',
@@ -48,7 +48,7 @@ const en = {
 
   /** 记录栏头上「在 Space 中查看」：去 Space 里这一类。 */
   save: {
-    view: 'View in Space',
+    view: 'View in the Library',
   },
 
   /** 产物行（设计稿 tool-frame.jsx `ToolOutputRow` / `ToolOutputs`）：结果页、任务详情、生成记录共用。 */
@@ -57,7 +57,7 @@ const en = {
     savedIn: (dir: string) => `Saved in ${dir}`,
     movie: 'Written to video',
     open: 'Open in Editor',
-    inSpace: 'View in Space',
+    inSpace: 'View in the Library',
     get reveal() {
       return revealLabel();
     },
@@ -163,7 +163,7 @@ const en = {
     empty: 'Nothing generated yet',
     emptyBody: 'Write the text, pick a voice, then press “Generate speech”.',
     sideFoot:
-      'Generated audio is stored in the save location and listed under “Audio” in Space; “Download” saves a copy wherever you choose. Cloud synthesis goes through the provider’s API and is billed by their rules.',
+      'Generated audio is stored in the save location and listed under “Audio” in the Library; “Download” saves a copy wherever you choose. Cloud synthesis goes through the provider’s API and is billed by their rules.',
     reused: (name: string) => `Brought back the text and settings of ${name}`,
     submitted: 'Generation started',
     submitFailed: (message: string) => `Didn't start: ${message}`,
@@ -184,7 +184,7 @@ const en = {
     change: 'Change…',
     pickTitle: 'Choose a save location for this run',
     pickFailed: (message: string) => `Couldn't choose a folder: ${message}`,
-    saveNote: 'Results appear as Space items and the files are saved in this folder; name clashes get a number and existing files are never overwritten.',
+    saveNote: 'Results appear as Library items and the files are saved in this folder; name clashes get a number and existing files are never overwritten.',
     /** 保存位置下面那句：说明（缺省 `saveNote`）、只改这一次时的提醒、默认位置在哪儿改。 */
     saveFoot: (note: string, once: boolean) =>
       `${note} ${once ? 'This applies to this run only; change' : 'Change'} the default location in Settings › General.`,
@@ -260,7 +260,7 @@ const en = {
     empty: 'Nothing generated yet',
     emptyBody: 'Describe the picture, pick a model, then press “Generate image”.',
     sideFoot:
-      'Generated images are stored in the save location and listed under “Images” in Space; “Download” saves a copy wherever you choose. Cloud providers may keep a copy of images they generate.',
+      'Generated images are stored in the save location and listed under “Images” in the Library; “Download” saves a copy wherever you choose. Cloud providers may keep a copy of images they generate.',
     again: 'Another take',
     againDone: 'Brought back this take’s prompt and settings · seed left empty for a new random one',
     failed: (message: string) => `Nothing generated · ${message}`,
@@ -283,12 +283,12 @@ const en = {
   text: {
     title: 'Text generation',
     submit: 'Generate text',
-    lede: 'Enter content and instructions to call a text model directly; generated documents are saved to Space automatically.',
+    lede: 'Enter content and instructions to call a text model directly; generated documents are saved to the Library automatically.',
     inputLabel: 'Instructions',
     material: 'Attached material',
-    materialAdd: 'Attach from Space…',
+    materialAdd: 'Attach from the Library…',
     materialRemove: 'Remove',
-    materialNote: 'You can attach a document or subtitles from Space; its text is sent to the model after your instructions.',
+    materialNote: 'You can attach a document or subtitles from the Library; its text is sent to the model after your instructions.',
     materialPicked: (name: string) => `Attaching the text of “${name}”`,
     inputPlaceholder: 'Describe what to generate, or paste source text and say how to rewrite or summarize it',
     sample: 'Fill in a sample',
@@ -299,11 +299,11 @@ const en = {
     noModel: 'No text model available yet',
     noModelBody: 'Connect a provider (enter its key) in Settings › Models › Text generation › Cloud models, then pick its models here.',
     side: 'History',
-    viewInSpace: 'View in Space',
+    viewInSpace: 'View in the Library',
     empty: 'No results yet',
-    emptyBody: 'Results are saved to Space automatically when done.',
+    emptyBody: 'Results are saved to the Library automatically when done.',
     sideFoot:
-      'The full text is stored on this computer and listed under “Documents” in Space (named “Generated text-date-time”); “Download” saves a copy wherever you choose. Cloud calls go through the provider’s API and are billed per token.',
+      'The full text is stored on this computer and listed under “Documents” in the Library (named “Generated text-date-time”); “Download” saves a copy wherever you choose. Cloud calls go through the provider’s API and are billed per token.',
     waiting: 'Waiting for the model…',
     copy: 'Copy',
     download: 'Download',
@@ -388,10 +388,10 @@ const en = {
     pathLabel: 'Or paste the file’s full path',
     pathPlaceholder: '/Users/…/clip.mp4',
     pathAdd: 'Add',
-    spaceAdd: 'Add from Space…',
-    spaceDone: 'Hide Space',
-    spaceItem: (kind: string) => `Space · ${kind}`,
-    spaceGone: 'This item is no longer in Space',
+    spaceAdd: 'Add from the Library…',
+    spaceDone: 'Hide the Library',
+    spaceItem: (kind: string) => `Library · ${kind}`,
+    spaceGone: 'This item is no longer in the Library',
     moveUp: 'Move up',
     moveDown: 'Move down',
     remove: 'Remove',
@@ -414,7 +414,7 @@ const en = {
     codec: 'Codec',
     audio: 'Audio',
     audioHint: 'Audio is always re-encoded to AAC.',
-    saveNote: 'Results appear as Space items and the files are saved in this folder; existing files are never overwritten, and name clashes get a number (-2, -3).',
+    saveNote: 'Results appear as Library items and the files are saved in this folder; existing files are never overwritten, and name clashes get a number (-2, -3).',
     mergeHow: 'How clips are joined',
     mergeHowBody:
       'Runtime reads every clip before deciding: if codec, resolution, frame rate, pixel format, audio tracks, sample rate and channels all match, the clips are stream-copied and the settings below don’t apply. Otherwise everything is re-encoded to match the first clip’s picture, other clips are scaled and padded to fit, and clips without sound get silence of the same length. Which way was used, and why, is written in the record on the right.',
@@ -453,29 +453,29 @@ const en = {
 
   /** 目录页：按处理的对象分三组（语音与字幕、文字与图片、视频文件），每张卡多一行「结果」。 */
   toolsHome: {
-    lede: 'Do one specific thing directly, without a session or an Agent connection. Results are saved to the default save location and appear as Space items, ready for another tool, a new video, or handing off to Agent.',
-    foot: 'Space items can go straight into a tool too: open an item in Space and choose “Process with a tool…”.',
+    lede: 'Do one specific thing directly, without a session or an Agent connection. Results are saved to the default save location and appear as Library items, ready for another tool, a new video, or handing off to Agent.',
+    foot: 'Library items can go straight into a tool too: open an item in the Library and choose “Process with a tool…”.',
     statusFailed: (message: string) => `Couldn't read tool status; the cards may be out of date: ${message}`,
   },
 
   picker: {
     label: 'Choose a video',
-    spaceLabel: 'Choose from Space',
+    spaceLabel: 'Choose from the Library',
     countKinds: (kinds: string, n: number) => `Accepts ${kinds} · ${n} available`,
-    emptySpaceTitle: 'Nothing in Space can be used',
+    emptySpaceTitle: 'Nothing in the Library can be used',
     emptySpaceBody: (kinds: string) => `This tool accepts ${kinds}. Try a different search, or start from a file on this computer.`,
-    search: 'Search Space',
+    search: 'Search the Library',
     searchPlaceholder: 'Search by name',
     countTranscript: (n: number) => `${n} with a transcript available; the rest are dimmed`,
     count: (n: number) => `${n} available`,
     noProject: 'No project',
     minutes: (n: number) => `${n} min`,
     emptyTitle: 'No matching videos',
-    emptyBody: 'Try a different search, or create one in Space first.',
+    emptyBody: 'Try a different search, or create one in the Library first.',
     loading: 'Loading videos…',
     failed: (message: string) => `Couldn't load the video list: ${message}`,
     pending: (n: number) => `${n} ${n === 1 ? 'video hasn’t' : 'videos haven’t'} finished loading; transcripts may be missing from the list`,
-    scanning: 'Space is still doing its first scan; the list may be incomplete',
+    scanning: 'The Library is still doing its first scan; the list may be incomplete',
     shown: (shown: number, total: number) => `Showing ${shown} of ${total}`,
     more: (n: number) => `Show ${n} more`,
   },
@@ -521,8 +521,8 @@ const en = {
     retried: 'Restarted from the step where it stopped',
     retryFailed: (message: string) => `Couldn't retry: ${message}`,
     open: 'Open in Editor',
-    noVideo: 'This video isn’t in Space yet; check back in a moment.',
-    noOutputs: 'This run’s outputs aren’t listed in Space yet; check back in a moment.',
+    noVideo: 'This video isn’t in the Library yet; check back in a moment.',
+    noOutputs: 'This run’s outputs aren’t listed in the Library yet; check back in a moment.',
     again: 'Run again',
     backToForm: 'Back to settings',
     inTasks: 'View in Background tasks',
@@ -541,7 +541,7 @@ const en = {
     needFile: 'Choose a video or audio file first',
     needUrl: 'Paste a link starting with http:// or https:// first',
     needVideo: 'Choose a video first',
-    needEntry: 'Choose an item from Space first',
+    needEntry: 'Choose an item from the Library first',
     needProject: 'Choose a project first',
     needLang: 'Choose a target language first',
     sameLang: 'The target language is the same as the source; pick another',
@@ -556,10 +556,10 @@ const en = {
 
   /** 工具 › 转录（设计稿 tool-transcribe.jsx）。原来的 `TRANSCRIBE_COPY` 里写着「还不能直接转录」的几句不再用。 */
   transcribeTool: {
-    lede: 'Turn video or audio into a transcript and subtitles. By default you get one transcript and one subtitle file in the save location; you can also create a new video, or write into an existing video in Space.',
+    lede: 'Turn video or audio into a transcript and subtitles. By default you get one transcript and one subtitle file in the save location; you can also create a new video, or write into an existing video in the Library.',
     targetTitle: 'Result',
     targetNone:
-      'The transcript (.txt) and subtitles (.srt) are saved to the location below, each as a Space item you can later translate, turn into speech, or make into a new video.',
+      'The transcript (.txt) and subtitles (.srt) are saved to the location below, each as a Library item you can later translate, turn into speech, or make into a new video.',
     createFile:
       'Assets stay where they are; the video links to them instead of copying files. The result is a new video in this project, with a transcript and an editable subtitle layer.',
     /** 下载视频带转写时不建字幕层（远端 §14 记为未实现），不承诺。 */

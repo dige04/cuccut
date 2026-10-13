@@ -21,10 +21,9 @@ import { toastFailure } from './use-service-actions.ts';
 
 const card = style({
   boxSizing: 'border-box',
-  maxWidth: '[640px]',
   padding: 16,
   marginTop: 12,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   backgroundColor: 'orange-100',
   borderWidth: 1,
   borderStyle: 'solid',

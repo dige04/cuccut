@@ -51,7 +51,7 @@ const bulk = style({
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
-  borderRadius: 'lg',
+  borderRadius: '[20px]',
   backgroundColor: 'gray-50',
 });
 const full = style({ width: 'full' });
@@ -60,7 +60,8 @@ const skipList = style({ display: 'flex', flexDirection: 'column', gap: 4, font:
 const acts = style({ display: 'flex', alignItems: 'center', gap: 8 });
 const spacer = style({ flexGrow: 1 });
 const mono = style({ font: 'code-sm' });
-const terms = style({ marginTop: 12, borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', borderRadius: 'lg', overflow: 'hidden' });
+const terms = style({ marginTop: 12, borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', borderRadius: '[20px]',
+  backgroundColor: 'layer-1', overflow: 'hidden' });
 const termRow = style({
   display: 'flex',
   alignItems: 'center',

@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 
 export const zhHans: SpaceMessages = {
   searchPlaceholder: '搜索名称、文件或视频里的话',
-  searchLabel: '搜索 Space',
+  searchLabel: '搜索资料库',
 
   // 列表与菜单
   openVideo: '打开视频',
@@ -131,7 +131,7 @@ export const zhHans: SpaceMessages = {
   // 删除视频（产品设计 §4.9）
   trashVideoTitle: '删除这个视频？',
   trashVideoBody: '整个视频目录移进项目里的回收站，可以恢复。链接的原始素材留在原处。',
-  trashVideoRelated: (n: number) => `由它导出、生成的 ${n} 个条目留在 Space 里，不随视频删除：`,
+  trashVideoRelated: (n: number) => `由它导出、生成的 ${n} 个条目留在资料库里，不随视频删除：`,
   trashVideoConfirm: '删除视频',
 
   // 彻底删除
@@ -146,7 +146,7 @@ export const zhHans: SpaceMessages = {
   // 改名
   renameTitle: '重命名',
   renameLabel: '显示名',
-  renameHint: (fileName: string) => `只改 Space 里显示的名字，文件本身不动；留空恢复为「${fileName}」。`,
+  renameHint: (fileName: string) => `只改资料库里显示的名字，文件本身不动；留空恢复为「${fileName}」。`,
   save: '保存',
 
   // 来源视频改过（产品设计 §4.6）
@@ -181,10 +181,10 @@ export const zhHans: SpaceMessages = {
   openForEdit: '打开编辑',
   newVideo: '新建视频',
   revealUnavailable: '这个文件不在任何项目或会话的目录里，没有可以显示的位置',
-  sidebarLabel: 'Space 分类',
+  sidebarLabel: '资料库分类',
   kindsHeader: '分类',
   mineHeader: '整理',
-  sidebarNote: 'Space 是所有项目里视频、素材与产物的视图；文件仍在各自的项目目录里。视频导出、生成的文件收在视频里，按类型看时逐个列出。',
+  sidebarNote: '资料库是所有项目里视频、素材与产物的视图；文件仍在各自的项目目录里。视频导出、生成的文件收在视频里，按类型看时逐个列出。',
   all: '全部',
   emptyFiltered: '没有符合条件的条目',
   emptyTrash: '回收站是空的',
@@ -203,12 +203,12 @@ export const zhHans: SpaceMessages = {
   issuesTitle: (n: number) => `有 ${n} 个目录没有列全`,
   issueTruncated: (detail: string) => `文件太多，只列了一部分：${detail}`,
   issueUnreadable: (detail: string) => `读不了：${detail}`,
-  preparing: '正在整理 Space…',
+  preparing: '正在整理资料库…',
   preparingBody: '第一次打开要扫描项目目录，稍等一下。',
   createIn: (project: string, hint: string) => `建在「${project}」里 · ${hint}`,
   whichProjectFor: (label: string) => `${label}：在哪个项目里`,
   entryActions: (name: string) => `「${name}」的操作`,
-  entriesLabel: 'Space 条目',
+  entriesLabel: '资料库条目',
   columnName: '名称',
   columnKind: '类型',
   columnSource: '来源',

@@ -70,7 +70,7 @@ export function SubtitleList({
     <div className={wrap}>
       <ol
         ref={listRef}
-        className={`${list} bc-scroll`}
+        className={`${list} cc-scroll`}
         aria-label={P.subtitles}
         onKeyDown={onKeyDown}
         onWheel={() => setFollowing(false)}
@@ -116,20 +116,20 @@ const CueRow = memo(function CueRow({
   onActivate: (cue: Cue) => void;
 }) {
   return (
-    <li data-cue={cue.index} className="bc-cue">
+    <li data-cue={cue.index} className="cc-cue">
       <button
         type="button"
-        className="bc-cue-button"
+        className="cc-cue-button"
         data-active={active || undefined}
         data-played={played || undefined}
         aria-current={active || undefined}
         tabIndex={tabbable ? 0 : -1}
         onClick={() => onActivate(cue)}>
-        <span className="bc-cue-meta">
+        <span className="cc-cue-meta">
           <span>{cue.index}</span>
           <span>{formatClock(cue.start, { tenths: true })}</span>
         </span>
-        <span className="bc-cue-text">{cue.text}</span>
+        <span className="cc-cue-text">{cue.text}</span>
       </button>
     </li>
   );

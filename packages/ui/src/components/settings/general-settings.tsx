@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   LOCALES,
   LOCALE_NATIVE_NAMES,
@@ -18,6 +18,7 @@ import {
   TextField,
   ToastQueue,
 } from '@react-spectrum/s2';
+import { Archive, Download, Globe, Monitor, PenLine } from 'lucide-react';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { AUTO_ROW, autoUpdatePatch } from '../../model/app-update.ts';
 import { shortenPath } from '../../model/format.ts';
@@ -38,10 +39,11 @@ import { useRuntime } from '../../runtime/context.tsx';
 import { useAppUpdate } from '../../state/app-update-store.ts';
 import { useConnection } from '../../state/connection-store.ts';
 import { useSetting, useSettings } from '../../state/settings-store.ts';
-import { useShell, type ColorScheme } from '../../state/shell-store.ts';
+import { useShell } from '../../state/shell-store.ts';
 import { ModelSourceRow } from '../models/model-source-row.tsx';
 import { M } from './general-settings-copy.ts';
 import { useSaveSettings, useSettingsReady } from './save-settings.ts';
+import { SettingsGroup, SettingsRow } from './settings-ui.tsx';
 
 /*
  * 设置 › 通用（设计稿 page-settings.jsx `GeneralSection`、settings-update.jsx `AppUpdateAutoRow`、import-panel.jsx
@@ -50,39 +52,10 @@ import { useSaveSettings, useSettingsReady } from './save-settings.ts';
  *
  * 不造假：Runtime 与界面都还没有用到的键（转录完成后、字幕行长）以及设计稿里没有实现的项（cue 底纹）照样画出来，
  * 但置灰，行下写一句为什么。自动更新由桌面主进程按这两个键执行，只在管更新的桌面宿主里出现。分组与行的样式与设置页的
- * Group / Row 相同。
+ * SettingsGroup / SettingsRow 相同（settings-ui.tsx 的面板与行）。外观（浅色/深色）不再提供：CucCut 只有深色。
  */
 
-const group = style({ marginBottom: 48 });
-const groupHead = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 });
-const groupTitle = style({ margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const card = style({ paddingX: 16, borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', borderRadius: 'xl' });
-const row = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-  paddingY: 16,
-  borderTopWidth: 0,
-  borderXWidth: 0,
-  borderBottomWidth: { default: 1, ':last-child': 0 },
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-const stackedRow = style({
-  paddingY: 16,
-  borderTopWidth: 0,
-  borderXWidth: 0,
-  borderBottomWidth: { default: 1, ':last-child': 0 },
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-const rowText = style({ flexGrow: 1, minWidth: 0 });
-const rowLabel = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const rowDesc = style({ marginTop: 4, font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere', userSelect: 'text' });
-/** 置灰的原因：说明下面另起一行，比说明深一档。 */
-const rowNote = style({ marginTop: 4, font: 'ui-sm', color: 'gray-800', overflowWrap: 'anywhere' });
-const rowControl = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 });
-const fieldLine = style({ display: 'flex', alignItems: 'start', flexWrap: 'wrap', gap: 8, marginTop: 12 });
+const fieldLine = style({ display: 'flex', alignItems: 'start', flexWrap: 'wrap', gap: 8, paddingBottom: 4 });
 const endpointInput = style({ flexGrow: 1, minWidth: 220 });
 const languagePicker = style({ width: 200 });
 const daysField = style({ width: 112 });
@@ -102,14 +75,12 @@ export function GeneralSettings() {
 }
 
 function InterfaceGroup() {
-  const scheme = useShell((s) => s.colorScheme);
-  const setScheme = useShell((s) => s.setColorScheme);
   const language = useShell((s) => s.language);
   const setLanguage = useShell((s) => s.setLanguage);
   const system = LOCALE_NATIVE_NAMES[resolveLanguage('system', navigator.languages ?? [navigator.language])];
   return (
-    <Group title={M.interfaceGroup}>
-      <Row label={M.language} desc={M.languageDesc}>
+    <SettingsGroup title={M.interfaceGroup} icon={<Monitor />}>
+      <SettingsRow label={M.language} desc={M.languageDesc}>
         <Picker
           size="S"
           aria-label={M.language}
@@ -123,15 +94,8 @@ function InterfaceGroup() {
             </PickerItem>
           ))}
         </Picker>
-      </Row>
-      <Row label={M.appearance} desc={M.appearanceDesc}>
-        <SegmentedControl aria-label={M.appearance} selectedKey={scheme} onSelectionChange={(key) => setScheme(key as ColorScheme)}>
-          <SegmentedControlItem id="system">{M.schemeSystem}</SegmentedControlItem>
-          <SegmentedControlItem id="light">{M.schemeLight}</SegmentedControlItem>
-          <SegmentedControlItem id="dark">{M.schemeDark}</SegmentedControlItem>
-        </SegmentedControl>
-      </Row>
-    </Group>
+      </SettingsRow>
+    </SettingsGroup>
   );
 }
 
@@ -142,11 +106,11 @@ function EditingGroup() {
   const preset = lineLengthKey(lineLength);
   const custom = lineLength && !preset ? lineLengthText(lineLength) : null;
   return (
-    <Group title={M.editingGroup}>
-      <Row label={M.autoOpen} desc={M.autoOpenDesc} note={M.autoOpenNote}>
+    <SettingsGroup title={M.editingGroup} icon={<PenLine />}>
+      <SettingsRow label={M.autoOpen} desc={M.autoOpenDesc} note={M.autoOpenNote}>
         <Switch aria-label={M.autoOpen} isDisabled isSelected={(after ?? 'open-video') === 'open-video'} />
-      </Row>
-      <Row label={M.lineLength} desc={M.lineLengthDesc} note={M.lineLengthNote(CUE_PARAMS.maxChars, custom)}>
+      </SettingsRow>
+      <SettingsRow label={M.lineLength} desc={M.lineLengthDesc} note={M.lineLengthNote(CUE_PARAMS.maxChars, custom)}>
         <SegmentedControl aria-label={M.lineLength} isDisabled selectedKey={preset}>
           {LINE_LENGTH_PRESETS.map((p) => (
             <SegmentedControlItem key={p.key} id={p.key}>
@@ -154,21 +118,21 @@ function EditingGroup() {
             </SegmentedControlItem>
           ))}
         </SegmentedControl>
-      </Row>
-      <Row label={M.cueShading} desc={M.cueShadingDesc} note={M.cueShadingNote}>
+      </SettingsRow>
+      <SettingsRow label={M.cueShading} desc={M.cueShadingDesc} note={M.cueShadingNote}>
         <Switch aria-label={M.cueShading} isDisabled isSelected={false} />
-      </Row>
-    </Group>
+      </SettingsRow>
+    </SettingsGroup>
   );
 }
 
 function DownloadsGroup({ web, ready }: { web: boolean; ready: boolean }) {
   return (
-    <Group title={M.downloadsGroup}>
+    <SettingsGroup title={M.downloadsGroup} icon={<Download />}>
       <SaveDirRow web={web} ready={ready} />
       <AutoUpdateRow ready={ready} />
       <DownloaderRow web={web} />
-    </Group>
+    </SettingsGroup>
   );
 }
 
@@ -185,14 +149,14 @@ function AutoUpdateRow({ ready }: { ready: boolean }) {
   const download = useSetting('updates.autoDownload');
   if (!updatable || unsupported) return null;
   return (
-    <Row label={AUTO_ROW.label} desc={AUTO_ROW.desc}>
+    <SettingsRow label={AUTO_ROW.label} desc={AUTO_ROW.desc}>
       <Switch
         aria-label={AUTO_ROW.label}
         isDisabled={!ready}
         isSelected={autoUpdateOn(check, download)}
         onChange={(on) => void save(autoUpdatePatch(on), on ? M.autoUpdateOn : M.autoUpdateOff)}
       />
-    </Row>
+    </SettingsRow>
   );
 }
 
@@ -220,7 +184,7 @@ function SaveDirRow({ web, ready }: { web: boolean; ready: boolean }) {
   };
   const off = web || !ready || busy;
   return (
-    <Row
+    <SettingsRow
       label={SAVE_DIR_ROW.label}
       desc={
         <>
@@ -237,7 +201,7 @@ function SaveDirRow({ web, ready }: { web: boolean; ready: boolean }) {
       <Button variant="secondary" size="S" isDisabled={off} onPress={() => void pick()}>
         {SAVE_DIR_ROW.change}
       </Button>
-    </Row>
+    </SettingsRow>
   );
 }
 
@@ -262,11 +226,11 @@ function DownloaderRow({ web }: { web: boolean }) {
   useEffect(() => {
     if (!web && connected) recheck();
   }, [web, connected, recheck]);
-  if (web) return <Row label={M.downloader} desc={M.downloaderWeb} />;
+  if (web) return <SettingsRow label={M.downloader} desc={M.downloaderWeb} />;
   const line = check.status === 'done' ? downloaderLine(check.tool) : null;
   const desc = check.status === 'checking' ? M.checking : check.status === 'failed' ? M.checkFailed(check.message) : (line?.desc ?? '');
   return (
-    <Row label={M.downloader} desc={desc}>
+    <SettingsRow label={M.downloader} desc={desc}>
       {line ? (
         <StatusLight size="S" variant={line.tone}>
           {line.status}
@@ -275,7 +239,7 @@ function DownloaderRow({ web }: { web: boolean }) {
       <Button variant="secondary" size="S" isDisabled={!connected} isPending={check.status === 'checking' && connected} onPress={recheck}>
         {M.checkAgain}
       </Button>
-    </Row>
+    </SettingsRow>
   );
 }
 
@@ -287,7 +251,7 @@ function SourcesGroup({ web, ready }: { web: boolean; ready: boolean }) {
   const save = useSaveSettings();
   const strict = useSetting('offline.strict');
   return (
-    <Group title={M.sourcesGroup}>
+    <SettingsGroup title={M.sourcesGroup} icon={<Globe />}>
       <ModelSourceRow label={M.modelsEndpoint} />
       <EndpointRow
         settingKey="tools.downloadEndpoint"
@@ -297,15 +261,15 @@ function SourcesGroup({ web, ready }: { web: boolean; ready: boolean }) {
         web={web}
         ready={ready}
       />
-      <Row label={M.strictOffline} desc={M.strictOfflineDesc} note={web ? M.webNote : undefined}>
+      <SettingsRow label={M.strictOffline} desc={M.strictOfflineDesc} note={web ? M.webNote : undefined}>
         <Switch
           aria-label={M.strictOffline}
           isDisabled={web || !ready}
           isSelected={strict ?? false}
           onChange={(on) => void save({ 'offline.strict': on }, on ? M.strictOfflineOn : M.strictOfflineOff)}
         />
-      </Row>
-    </Group>
+      </SettingsRow>
+    </SettingsGroup>
   );
 }
 
@@ -339,32 +303,34 @@ function EndpointRow({
   };
   const off = web || !ready || busy;
   return (
-    <div className={stackedRow}>
-      <div className={rowLabel}>{label}</div>
-      <div className={rowDesc}>{desc}</div>
-      {web ? <div className={rowNote}>{M.webNote}</div> : null}
-      <div className={fieldLine}>
-        <TextField
-          aria-label={label}
-          size="S"
-          value={value}
-          onChange={setValue}
-          placeholder={placeholder}
-          isInvalid={problem !== null}
-          errorMessage={problem ?? undefined}
-          isDisabled={off}
-          styles={endpointInput}
-        />
-        <Button variant="secondary" size="S" isDisabled={off || problem !== null || (next ?? '') === saved} onPress={() => void commit(next)}>
-          {M.save}
-        </Button>
-        {saved ? (
-          <Button variant="secondary" size="S" isDisabled={off} onPress={() => void commit(null)}>
-            {M.resetDefault}
+    <SettingsRow
+      label={label}
+      desc={desc}
+      note={web ? M.webNote : undefined}
+      below={
+        <div className={fieldLine}>
+          <TextField
+            aria-label={label}
+            size="S"
+            value={value}
+            onChange={setValue}
+            placeholder={placeholder}
+            isInvalid={problem !== null}
+            errorMessage={problem ?? undefined}
+            isDisabled={off}
+            styles={endpointInput}
+          />
+          <Button variant="secondary" size="S" isDisabled={off || problem !== null || (next ?? '') === saved} onPress={() => void commit(next)}>
+            {M.save}
           </Button>
-        ) : null}
-      </div>
-    </div>
+          {saved ? (
+            <Button variant="secondary" size="S" isDisabled={off} onPress={() => void commit(null)}>
+              {M.resetDefault}
+            </Button>
+          ) : null}
+        </div>
+      }
+    />
   );
 }
 
@@ -374,8 +340,8 @@ function SpaceGroup({ web, ready }: { web: boolean; ready: boolean }) {
   const days = useSetting('space.trashRetentionDays');
   const fallback = useSettings((s) => s.snapshot?.defaults['space.trashRetentionDays'] ?? null);
   return (
-    <Group title="Space">
-      <Row
+    <SettingsGroup title="Space" icon={<Archive />}>
+      <SettingsRow
         label={M.trashDays}
         desc={M.trashDaysDesc(fallback)}
         note={web ? M.webNote : undefined}>
@@ -393,32 +359,7 @@ function SpaceGroup({ web, ready }: { web: boolean; ready: boolean }) {
             if (next !== days) void save({ 'space.trashRetentionDays': next });
           }}
         />
-      </Row>
-    </Group>
-  );
-}
-
-export function Group({ title: text, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className={group} aria-label={text}>
-      <div className={groupHead}>
-        <h2 className={groupTitle}>{text}</h2>
-      </div>
-      <div className={card}>{children}</div>
-    </section>
-  );
-}
-
-/** 一行：左边名字、说明与置灰的原因，右边控件。 */
-export function Row({ label, desc, note, children }: { label: string; desc?: ReactNode; note?: string; children?: ReactNode }) {
-  return (
-    <div className={row}>
-      <div className={rowText}>
-        <div className={rowLabel}>{label}</div>
-        {desc ? <div className={rowDesc}>{desc}</div> : null}
-        {note ? <div className={rowNote}>{note}</div> : null}
-      </div>
-      {children ? <div className={rowControl}>{children}</div> : null}
-    </div>
+      </SettingsRow>
+    </SettingsGroup>
   );
 }

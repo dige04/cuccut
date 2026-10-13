@@ -324,7 +324,7 @@ export function ImagePreview({
       />
     );
   return (
-    <section className={`${root} ${mediaTheme} bc-image-preview ${immersive ? 'bc-image-immersive' : ''}`} aria-label={fileName}>
+    <section className={`${root} ${mediaTheme} cc-image-preview ${immersive ? 'cc-image-immersive' : ''}`} aria-label={fileName}>
       <ImageChrome
         gif={isGif}
         name={fileName}
@@ -353,7 +353,7 @@ export function ImagePreview({
         />
       )}
       {view.view === 'canvas' && (
-        <div className="bc-image-batch">
+        <div className="cc-image-batch">
           <ActionButton onPress={() => setSelection(canvasFiles.map((f) => targetKey(f.target)))}>{M.all}</ActionButton>
           <ActionButton onPress={() => setSelection([])}>{M.clear}</ActionButton>
           <Button
@@ -376,13 +376,13 @@ export function ImagePreview({
           </Button>
         </div>
       )}
-      <div className={`${layout} bc-image-layout`}>
+      <div className={`${layout} cc-image-layout`}>
         {view.view === 'focused' && files.length > 1 && (
           <ImageRail files={files} selected={targetKey(target)} onSelect={(f) => onSelect?.(f)} />
         )}
-        <div ref={stage} className={`${stageStyle} bc-scroll bc-image-stage`} style={{ cursor: commenting ? 'crosshair' : 'grab' }}>
+        <div ref={stage} className={`${stageStyle} cc-scroll cc-image-stage`} style={{ cursor: commenting ? 'crosshair' : 'grab' }}>
           {view.view === 'canvas' ? (
-            <div className="bc-image-grid">
+            <div className="cc-image-grid">
               {canvasFiles.map((f) => (
                 <div key={targetKey(f.target)}>
                   <ImageRail
@@ -407,7 +407,7 @@ export function ImagePreview({
               ))}
             </div>
           ) : view.sheet && gif.data ? (
-            <div className="bc-gif-grid">
+            <div className="cc-gif-grid">
               {gif.data.frames.map((f, i) => (
                 <ActionButton key={i} aria-label={`${M.frame} ${i + 1}`} onPress={() => update({ frame: i, sheet: false, playing: false })}>
                   <img src={f.url} alt={`${M.frame} ${i + 1}`} />
@@ -481,7 +481,7 @@ export function ImagePreview({
           )}
         </div>
         {commenting && (
-          <aside className={`${commentsStyle} bc-scroll`} aria-label={M.annotations}>
+          <aside className={`${commentsStyle} cc-scroll`} aria-label={M.annotations}>
             <h3>
               {M.annotations} · {comments.length}
             </h3>

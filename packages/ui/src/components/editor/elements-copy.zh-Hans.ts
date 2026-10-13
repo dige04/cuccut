@@ -56,7 +56,6 @@ export const zhHans: ElementsMessages = {
   tabBrand: '品牌',
   tabProps: '属性',
   currentTool: '当前编辑工具',
-  videoTools: '视频编辑工具',
   resizePanel: '调整面板宽度',
   added: (label: string, start: string, end: string) => `已添加${label} · ${start} → ${end}`,
   undo: '撤销',

@@ -28,21 +28,15 @@ import { projectNameError } from '../../model/home-brief.ts';
 import { useRuntime } from '../../runtime/context.tsx';
 import { useConnection } from '../../state/connection-store.ts';
 
-// 贴在输入框下沿的托盘：比输入框窄一圈、上边压进输入框底下 12px，看上去和输入框是一个整体（原型 `.home-create__project`）。
-// 输入框下面 S2 留的空提示段落已经收掉（app.css `[data-composer-start] p:empty`），这里只压 12px；压多了会被输入框的外框盖住，按钮点不到。
+// The row under the composer inside the start panel (agentcut keeps "what else" on its own row under the box):
+// where the session runs, the project menu and the project path, aligned with the composer's own toolbar.
 const row = style({
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  marginX: 16,
-  marginTop: -12,
-  paddingTop: 16,
-  paddingBottom: 4,
-  paddingX: 12,
+  marginTop: 8,
+  paddingX: 4,
   minWidth: 0,
-  backgroundColor: 'gray-75',
-  borderBottomStartRadius: 'lg',
-  borderBottomEndRadius: 'lg',
 });
 const device = style({ display: 'inline-flex', alignItems: 'center', gap: 4, font: 'ui-sm', color: 'gray-700', whiteSpace: 'nowrap' });
 const path = style({ font: 'ui-sm', color: 'gray-600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 });

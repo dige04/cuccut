@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const zhHans: StageBarMessages = {
-  bar: '预览控件',
   ratio: '画幅',
   ratioReadOnly: '画幅 · 视频是只读的',
   ratioApplied: (ratio: string) => `画幅已改为 ${ratio}`,

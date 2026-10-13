@@ -79,7 +79,7 @@ export function SubtitleLive({ jobId, sequence }: { jobId: Id | null; sequence: 
 
   return (
     <div className={frame}>
-      <div ref={bodyRef} className={`${body} bc-scroll`} onScroll={onScroll} aria-live="polite">
+      <div ref={bodyRef} className={`${body} cc-scroll`} onScroll={onScroll} aria-live="polite">
         {cards.length ? (
           <div className={list}>
             {cards.map((c, i) => {
@@ -88,13 +88,13 @@ export function SubtitleLive({ jobId, sequence }: { jobId: Id | null; sequence: 
                 <div key={c.index} className={card} onClick={() => seek(c.start)}>
                   <span className={accent} aria-hidden />
                   <div className={head}>
-                    <span className={`${number} bc-tabular`}>{i + 1}</span>
+                    <span className={`${number} cc-tabular`}>{i + 1}</span>
                     {tail ? <span className={unknown}>{T.liveSpeaker}</span> : null}
-                    <span className={`${time} bc-tabular`}>{formatClock(c.start)}</span>
+                    <span className={`${time} cc-tabular`}>{formatClock(c.start)}</span>
                   </div>
                   <div className={text({ isTail: tail })}>
                     {c.text}
-                    {tail ? <span className={`${caret} bc-live-caret`} /> : null}
+                    {tail ? <span className={`${caret} cc-live-caret`} /> : null}
                   </div>
                 </div>
               );

@@ -78,11 +78,11 @@ export function installHelpers() {
   };
   window.__snap = () => {
     const tl = window.__tl();
-    const sc = tl.querySelector('.bc-scroll');
+    const sc = tl.querySelector('.cc-scroll');
     return {
       nodes: tl.querySelectorAll('*').length,
-      clips: tl.querySelectorAll('.bc-clip').length,
-      bands: tl.querySelectorAll('.bc-cut-band').length,
+      clips: tl.querySelectorAll('.cc-clip').length,
+      bands: tl.querySelectorAll('.cc-cut-band').length,
       scroll: Math.round(sc.scrollLeft),
       width: sc.scrollWidth,
     };
@@ -249,10 +249,10 @@ export function installHelpers() {
   };
   window.__mountedTl = () => {
     const tl = window.__tl();
-    const sc = tl.querySelector('.bc-scroll');
+    const sc = tl.querySelector('.cc-scroll');
     return {
-      clips: tl.querySelectorAll('.bc-clip').length,
-      bands: tl.querySelectorAll('.bc-cut-band').length,
+      clips: tl.querySelectorAll('.cc-clip').length,
+      bands: tl.querySelectorAll('.cc-cut-band').length,
       elements: tl.querySelectorAll('*').length,
       viewportW: sc.clientWidth,
       viewportH: sc.clientHeight,
@@ -385,11 +385,11 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   const z100 = () => ev(`await window.__run(window.__z.z100); await window.__sleep(800); return 1`);
   const zoomStep = (fn) =>
     J(
-      `const sc = window.__tl().querySelector('.bc-scroll'); const w0 = sc.scrollWidth; const r = await window.__measure(window.__z.${fn});
+      `const sc = window.__tl().querySelector('.cc-scroll'); const w0 = sc.scrollWidth; const r = await window.__measure(window.__z.${fn});
        return JSON.stringify({ ...r, w0, w1: sc.scrollWidth, clips: window.__mountedTl().clips })`,
     );
   await ev(
-    `await window.__run(window.__z.z100); const sc = window.__tl().querySelector('.bc-scroll'); sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; await window.__sleep(1500); return 1`,
+    `await window.__run(window.__z.z100); const sc = window.__tl().querySelector('.cc-scroll'); sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; await window.__sleep(1500); return 1`,
   );
   result.timeline = { mounted100: await J(`return JSON.stringify(window.__mountedTl())`), zoomIn: [], zoomOut: [], fit: [] };
   for (let i = 0; i < 3; i++) {
@@ -406,7 +406,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   log('缩放与整片入镜');
   await z100();
   result.timeline.maxSteps = await J(
-    `const sc = window.__tl().querySelector('.bc-scroll'); let n = 0;
+    `const sc = window.__tl().querySelector('.cc-scroll'); let n = 0;
      for (; n < 20; n++) { const w = sc.scrollWidth; await window.__run(window.__z.zin); if (sc.scrollWidth === w) break; }
      return JSON.stringify(n)`,
   );
@@ -416,7 +416,7 @@ export async function runSuite(page, { video, px = 40, fast = 200, frames = 240,
   ]) {
     if (back100) await z100();
     result.timeline[`scroll ${name}`] = await J(
-      `const sc = window.__tl().querySelector('.bc-scroll'); sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) * 0.3; await window.__sleep(1000);
+      `const sc = window.__tl().querySelector('.cc-scroll'); sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) * 0.3; await window.__sleep(1000);
        await window.__frames(sc, 'x', ${px}, 60); await window.__sleep(500);
        const d = await window.__frames(sc, 'x', ${px}, ${frames}); await window.__sleep(500);
        const f = await window.__frames(sc, 'x', ${fast}, ${frames}); await window.__sleep(800);

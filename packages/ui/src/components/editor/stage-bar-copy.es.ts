@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const es: StageBarMessages = {
-  bar: 'Controles de la vista previa',
   ratio: 'Relación de aspecto',
   ratioReadOnly: 'Relación de aspecto · el vídeo es de solo lectura',
   ratioApplied: (ratio: string) => `Relación de aspecto cambiada a ${ratio}`,

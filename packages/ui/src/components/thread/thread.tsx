@@ -55,9 +55,7 @@ const threadVars = style({
   '--cc-at-add-text': { type: 'color', value: 'green-1100' },
   '--cc-at-del-text': { type: 'color', value: 'red-1100' },
   '--cc-at-code-bg': { type: 'backgroundColor', value: 'gray-100' },
-  '--cc-at-code-bg-hover': { type: 'backgroundColor', value: 'gray-200' },
   '--cc-at-row-hover': { type: 'backgroundColor', value: 'gray-75' },
-  '--cc-at-pre-bg': { type: 'backgroundColor', value: 'gray-50' },
   '--cc-at-err-bg': { type: 'backgroundColor', value: 'red-100' },
   '--cc-at-add-bg': { type: 'backgroundColor', value: 'green-100' },
   '--cc-at-del-bg': { type: 'backgroundColor', value: 'red-100' },
@@ -70,8 +68,8 @@ const threadVars = style({
 /** 一行：回复下面挂着产物时，两者之间 8。 */
 const row = style({ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 });
 
-/** 回复下面的产物（原型 apprail.css `.chat-outputs` :126）：竖排，与回复正文对齐（头像 24 + 间距 12）。 */
-const messageOutputs = style({ display: 'flex', flexDirection: 'column', gap: 8, marginStart: 36 });
+/** Outputs under a reply (prototype apprail.css `.chat-outputs` :126): stacked, aligned with the reply's start edge. */
+const messageOutputs = style({ display: 'flex', flexDirection: 'column', gap: 8 });
 
 export function Thread({
   items,

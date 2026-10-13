@@ -34,7 +34,7 @@ import { adoptDownload, bindFlowRunner, flowToast, followOf, useFlowRuns, type F
 import { openHome } from '../start/open-home.ts';
 import { useVideoTools } from '../tools/use-video-tools.ts';
 import { useNow } from '../use-now.ts';
-import { UtilityPage } from '../utility-page.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
 import { TaskFacts } from './task-sections.tsx';
 import { TK } from './tasks-copy.ts';
 
@@ -47,8 +47,7 @@ import { TK } from './tasks-copy.ts';
  * （Runtime 的安装只有一种：CucCut 自己管理的独立副本）；下载速度不显示（子任务只报字节数）。
  */
 
-const statusLine = style({ font: 'ui-sm', color: 'gray-600', marginTop: -20, marginBottom: 0 });
-const steps = style({ display: 'flex', gap: 16, listStyleType: 'none', marginTop: 24, marginBottom: 24, padding: 0 });
+const steps = style({ display: 'flex', gap: 16, listStyleType: 'none', margin: 0, padding: 0 });
 const stepItem = style({
   flexGrow: 1,
   flexBasis: 0,
@@ -70,7 +69,7 @@ const stepDot = style({
   backgroundColor: { default: 'gray-200', state: { current: 'blue-200', done: 'green-200', failed: 'red-200' } },
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
 });
-const main = style({ borderRadius: 'lg', borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', backgroundColor: 'layer-1', overflow: 'hidden' });
+const main = style({ borderRadius: '[16px]', borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', backgroundColor: 'layer-1', overflow: 'hidden' });
 const media = style({
   display: 'flex',
   alignItems: 'center',
@@ -89,7 +88,7 @@ const mediaIcon = style({
   justifyContent: 'center',
   flexShrink: 0,
   size: 64,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   color: 'blue-1000',
   backgroundColor: 'blue-100',
   '--iconPrimary': { type: 'fill', value: 'currentColor' },
@@ -107,7 +106,7 @@ const recovery = style({
   marginX: 24,
   marginBottom: 24,
   padding: 20,
-  borderRadius: 'lg',
+  borderRadius: '[16px]',
   backgroundColor: { default: 'red-100', isSetup: 'blue-100' },
   color: { default: 'red-1000', isSetup: 'blue-1000' },
 });
@@ -365,8 +364,7 @@ export function LinkImportDetail({ row: taskRow, job, backButton }: { row: TaskR
   );
 
   return (
-    <UtilityPage kind="tasks" before={backButton} title={linkHeading(job, follow)}>
-      <p className={statusLine}>{saved ? TK.link.savedLead : TK.link.pendingLead}</p>
+    <UtilityShell kind="tasks" before={backButton} title={linkHeading(job, follow)} blurb={saved ? TK.link.savedLead : TK.link.pendingLead}>
       <ol className={steps} aria-label={TK.link.steps}>
         {stages.map((s, i) => (
           <li key={s.key} className={stepItem({ state: s.state === 'skipped' ? 'pending' : s.state })} aria-label={TK.link.stepState(s.label, STAGE_LABEL[s.state])}>
@@ -457,6 +455,6 @@ export function LinkImportDetail({ row: taskRow, job, backButton }: { row: TaskR
       </div>
 
       <TaskFacts rows={taskFacts(taskRow, { job }, now)} />
-    </UtilityPage>
+    </UtilityShell>
   );
 }

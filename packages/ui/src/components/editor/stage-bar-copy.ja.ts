@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const ja: StageBarMessages = {
-  bar: 'プレビューのコントロール',
   ratio: 'アスペクト比',
   ratioReadOnly: 'アスペクト比 · 動画は読み取り専用です',
   ratioApplied: (ratio: string) => `アスペクト比を ${ratio} に変更しました`,

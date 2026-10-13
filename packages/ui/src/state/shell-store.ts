@@ -212,7 +212,8 @@ export const useShell = create<ShellStore>()(
       forward: [],
       lastRoute: {},
       sidebarWidth: SIDEBAR_DEFAULT,
-      sidebarHidden: false,
+      // The sessions drawer starts closed (agentcut's session view opens on the work, not on a list).
+      sidebarHidden: true,
       drafts: {},
       draftAccessModes: {},
       expandedProjects: [],
@@ -463,7 +464,7 @@ export const useShell = create<ShellStore>()(
     }),
     {
       name: 'cuccut.shell',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         sidebarWidth: s.sidebarWidth,
@@ -503,6 +504,8 @@ export const useShell = create<ShellStore>()(
 export function migrateShell(persisted: unknown, version: number): Partial<ShellStore> {
   const state = { ...(persisted as Record<string, unknown>) };
   if (version < 3) delete state.autonomy;
+  // 5 -> 6: the docked page sidebar became the session view's sessions drawer, closed by default; forget the old choice.
+  if (version < 6) delete state.sidebarHidden;
   const modes = state.draftAccessModes;
   state.draftAccessModes =
     modes && typeof modes === 'object'

@@ -15,7 +15,6 @@ import { HelpCenter } from './help/help-center.tsx';
 import { HomePage } from './home-page.tsx';
 import { ServicesPage } from './services-page.tsx';
 import { SettingsPage } from './settings-page.tsx';
-import { ShellPeekProvider } from './shell-peek.tsx';
 import { SpacePage } from './space/space-page.tsx';
 import { TasksPage } from './tasks-page.tsx';
 import { ToolsPage } from './tools-page.tsx';
@@ -75,7 +74,7 @@ export function AppShell({ platform }: { platform: string }) {
   }, []);
 
   return (
-    <ShellPeekProvider>
+    <>
       {/* The frame (agentcut layout): ambient light behind everything, the macOS window strip, then one page. Each page
           draws its own glass header — the navigation bar on the landing page, a back header everywhere else. */}
       <div className="relative isolate flex h-full flex-col font-sans text-foreground">
@@ -105,7 +104,7 @@ export function AppShell({ platform }: { platform: string }) {
         {/* 启动时的旧版项目导入询问：Runtime 发现还没导入的旧版项目、又没有记下决定时问一次（Web 不问）。 */}
         <LegacyImportHost />
       </div>
-    </ShellPeekProvider>
+    </>
   );
 }
 

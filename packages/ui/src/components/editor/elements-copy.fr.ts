@@ -56,7 +56,6 @@ export const fr: ElementsMessages = {
   tabBrand: "Marque",
   tabProps: "Propriétés",
   currentTool: "Outil de montage actuel",
-  videoTools: "Outils de montage vidéo",
   resizePanel: "Redimensionner le panneau",
   added: (label: string, start: string, end: string) => `Ajouté : ${label} · ${start} → ${end}`,
   undo: "Annuler",

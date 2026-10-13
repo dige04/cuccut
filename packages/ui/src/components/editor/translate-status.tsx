@@ -134,12 +134,12 @@ export function TranslateRunHead({ live, documents }: { live: TranslateLive; doc
       <div className={titleRow}>
         <span className={dot({ isQueued: queued })} aria-hidden />
         <span className={title}>{heading}</span>
-        {pct === null ? null : <span className={`${percent} bc-tabular`}>{pct}%</span>}
+        {pct === null ? null : <span className={`${percent} cc-tabular`}>{pct}%</span>}
       </div>
       <ProgressBar size="S" aria-label={heading} isIndeterminate={pct === null} {...(pct === null ? {} : { value: pct })} styles={bar} />
       {progress?.units || progress?.step ? (
         <div className={meta}>
-          {progress.units ? <span className="bc-tabular">{C.stepUnits(progress.units.done, progress.units.total)}</span> : null}
+          {progress.units ? <span className="cc-tabular">{C.stepUnits(progress.units.done, progress.units.total)}</span> : null}
           {progress.units && progress.step ? <span className={sep}>·</span> : null}
           {progress.step ? <span>{progress.step}</span> : null}
         </div>
@@ -187,7 +187,7 @@ function AgentRunHead({ live, job, sentences, documents }: { live: TranslateLive
       </div>
       <ProgressBar size="S" aria-label={heading} isIndeterminate styles={bar} />
       <div className={meta}>
-        {sentences ? <span className="bc-tabular">{VIDEO_CARD_COPY.sentenceTotal(sentences)}</span> : null}
+        {sentences ? <span className="cc-tabular">{VIDEO_CARD_COPY.sentenceTotal(sentences)}</span> : null}
         {sentences ? <span className={sep}>·</span> : null}
         <span>{C.agentNote}</span>
       </div>

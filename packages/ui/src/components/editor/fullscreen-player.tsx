@@ -277,7 +277,7 @@ export function FullscreenPlayer({
     <UNSAFE_PortalProvider getContainer={portal}>
       <div
         ref={rootRef}
-        className={`${root} bc-fsp`}
+        className={`${root} cc-fsp`}
         data-idle={hidden || undefined}
         tabIndex={-1}
         role="region"
@@ -293,15 +293,15 @@ export function FullscreenPlayer({
           onDoubleClick={exitPreviewFullscreen}
         />
         {children}
-        <Provider colorScheme="dark" UNSAFE_className="bc-fsp-chrome">
-          <div className="bc-fsp-top">
+        <Provider colorScheme="dark" UNSAFE_className="cc-fsp-chrome">
+          <div className="cc-fsp-top">
             <div className={title}>{name}</div>
             {chapter ? <div className={subtitle}>{chapter.title}</div> : null}
           </div>
 
           {keysOpen ? (
-            <div className="bc-fsp-keys" onClick={() => setKeysOpen(false)}>
-              <div className="bc-fsp-keys-card" role="dialog" aria-label={F.keysTitle} onClick={(event) => event.stopPropagation()}>
+            <div className="cc-fsp-keys" onClick={() => setKeysOpen(false)}>
+              <div className="cc-fsp-keys-card" role="dialog" aria-label={F.keysTitle} onClick={(event) => event.stopPropagation()}>
                 <h2 className={keysTitle}>{F.keysTitle}</h2>
                 {PLAYER_KEYS.map((key) => (
                   <div key={key.action} className={keyRow}>
@@ -315,7 +315,7 @@ export function FullscreenPlayer({
           ) : null}
 
           <div
-            className="bc-fsp-bar"
+            className="cc-fsp-bar"
             onPointerEnter={() => {
               setHovering(true);
               poke();
@@ -358,13 +358,13 @@ export function FullscreenPlayer({
                 </ActionButton>
               </Tip>
               {/* 音量：钮常驻，滑杆悬停、聚焦或拖动时展开——控件行不为一条平时用不到的杆常年占 80px。 */}
-              <div className="bc-fsp-volume" data-dragging={volumeDragging || undefined}>
+              <div className="cc-fsp-volume" data-dragging={volumeDragging || undefined}>
                 <Tip label={level.muted ? P.unmuteTip : P.muteTip}>
                   <ActionButton isQuiet staticColor="white" aria-label={level.muted ? P.unmute : P.mute} onPress={() => setLevel(toggleMute(level))}>
                     <VolumeIcon />
                   </ActionButton>
                 </Tip>
-                <div className="bc-fsp-volume-slider">
+                <div className="cc-fsp-volume-slider">
                   <Slider
                     size="S"
                     aria-label={P.volume}
@@ -381,7 +381,7 @@ export function FullscreenPlayer({
                   />
                 </div>
               </div>
-              <span className={`${clock} bc-tabular`} aria-label={E.playhead}>
+              <span className={`${clock} cc-tabular`} aria-label={E.playhead}>
                 {formatTenths(playhead)}
                 <span className={clockTotal}> / {formatTenths(duration)}</span>
               </span>
@@ -417,7 +417,7 @@ export function FullscreenPlayer({
               <MenuTrigger align="end" direction="top" onOpenChange={(open) => setPopup(open ? 'rate' : null)}>
                 <Tip label={P.rate}>
                   <ActionButton staticColor="white" aria-label={P.rateCurrent(rate)}>
-                    <Text UNSAFE_className="bc-tabular">{`${rate}×`}</Text>
+                    <Text UNSAFE_className="cc-tabular">{`${rate}×`}</Text>
                   </ActionButton>
                 </Tip>
                 <Menu
@@ -489,7 +489,7 @@ function SeekBar({
   return (
     <AriaSlider
       aria-label={P.position}
-      className="bc-fsp-seek"
+      className="cc-fsp-seek"
       data-active={dragging || undefined}
       minValue={0}
       maxValue={max}
@@ -513,7 +513,7 @@ function SeekBar({
       formatOptions={{ style: 'unit', unit: 'second', unitDisplay: 'long', maximumFractionDigits: 0 }}>
       <SliderTrack
         ref={trackRef}
-        className="bc-fsp-seek-track"
+        className="cc-fsp-seek-track"
         onPointerEnter={() => (inside.current = true)}
         onPointerMove={(event) => setHover(timeOf(event.clientX))}
         onPointerLeave={() => {
@@ -522,13 +522,13 @@ function SeekBar({
         }}>
         {({ state }) => (
           <>
-            <div className="bc-fsp-seek-rail">
-              <div className={`bc-fsp-seek-fill ${seekFill}`} style={{ width: `${state.getThumbPercent(0) * 100}%` }} />
+            <div className="cc-fsp-seek-rail">
+              <div className={`cc-fsp-seek-fill ${seekFill}`} style={{ width: `${state.getThumbPercent(0) * 100}%` }} />
               {ticks.map((at) => (
-                <i key={at} className="bc-fsp-seek-tick" style={{ left: `${at * 100}%` }} />
+                <i key={at} className="cc-fsp-seek-tick" style={{ left: `${at * 100}%` }} />
               ))}
             </div>
-            <SliderThumb className="bc-fsp-seek-thumb" />
+            <SliderThumb className="cc-fsp-seek-thumb" />
             {hover === null ? null : (
               <SeekBubble sequence={sequence} assets={assets} chapters={chapters} seconds={hover} left={seekFraction(hover, duration)} />
             )}
@@ -559,9 +559,9 @@ function SeekBubble({
   const size = previewSize(sequence.canvas);
   const chapter = chapters[chapterAt(chapters, seconds)];
   return (
-    <div className="bc-fsp-bubble" style={{ left: `${left * 100}%` }} aria-hidden>
-      <div className="bc-fsp-bubble-frame" style={{ width: size.width, height: size.height, backgroundImage: url ? `url("${url}")` : undefined }} />
-      <span className={`${bubbleTime} bc-tabular`}>{formatTenths(seconds)}</span>
+    <div className="cc-fsp-bubble" style={{ left: `${left * 100}%` }} aria-hidden>
+      <div className="cc-fsp-bubble-frame" style={{ width: size.width, height: size.height, backgroundImage: url ? `url("${url}")` : undefined }} />
+      <span className={`${bubbleTime} cc-tabular`}>{formatTenths(seconds)}</span>
       {chapter ? <span className={bubbleChapter}>{chapter.title}</span> : null}
     </div>
   );

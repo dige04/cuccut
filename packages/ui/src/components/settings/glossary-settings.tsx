@@ -16,22 +16,21 @@ import { M } from './general-settings-copy.ts';
 import { GLOSSARY_COPY } from './glossary-copy.ts';
 import { GlossaryDetail } from './glossary-detail.tsx';
 import { LanguagePicker } from './glossary-language-picker.tsx';
+import { SubHeading } from './settings-ui.tsx';
 
-const root = style({ display: 'flex', flexDirection: 'column', minWidth: 0 });
-const lede = style({ marginTop: -24, marginBottom: 0, font: 'ui', color: 'gray-700' });
-const section = style({ marginTop: 32, marginBottom: 8 });
-const sectionTitle = style({ margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const sectionHint = style({ marginTop: 4, marginBottom: 0, font: 'ui-sm', color: 'gray-600' });
+const root = style({ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 });
 const list = style({ display: 'flex', flexDirection: 'column', gap: 8, margin: 0, padding: 0, listStyleType: 'none' });
 const card = style({
   display: 'flex',
   alignItems: 'center',
   gap: 12,
-  padding: 12,
+  paddingX: 16,
+  paddingY: 12,
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: { default: 'gray-200', ':hover': 'gray-300' },
-  borderRadius: 'lg',
+  borderRadius: '[20px]',
+  backgroundColor: 'layer-1',
 });
 const cardMain = style({ display: 'flex', flexDirection: 'column', gap: 4, flexGrow: 1, minWidth: 0 });
 const cardName = style({ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 });
@@ -49,7 +48,7 @@ const newBox = style({
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: 'gray-200',
-  borderRadius: 'lg',
+  borderRadius: '[20px]',
   backgroundColor: 'gray-50',
 });
 const newText = style({ font: 'ui-sm', color: 'gray-800' });
@@ -59,7 +58,6 @@ const footActions = style({
   alignItems: 'center',
   flexWrap: 'wrap',
   gap: 8,
-  marginTop: 32,
   paddingTop: 16,
   borderTopWidth: 1,
   borderXWidth: 0,
@@ -68,9 +66,9 @@ const footActions = style({
   borderColor: 'gray-200',
 });
 const foot = style({ marginTop: 12, marginBottom: 0, font: 'ui-xs', color: 'gray-600' });
-const loadingRow = style({ display: 'flex', alignItems: 'center', gap: 8, marginTop: 24, font: 'ui-sm', color: 'gray-600' });
+const loadingRow = style({ display: 'flex', alignItems: 'center', gap: 8, font: 'ui-sm', color: 'gray-600' });
 const emptyText = style({ margin: 0, font: 'ui-sm', color: 'gray-600' });
-const webNote = style({ marginTop: 24, marginBottom: 0, font: 'ui-sm', color: 'gray-800' });
+const webNote = style({ margin: 0, font: 'ui-sm', color: 'gray-800' });
 
 const L = () => GLOSSARY_COPY.list;
 
@@ -136,7 +134,6 @@ function GlossaryList({ ready, glossaries, onOpen }: { ready: boolean; glossarie
 
   return (
     <div className={root}>
-      <p className={lede}>{L().lede}</p>
       {web ? (
         <p className={webNote}>{M.webUnavailable}</p>
       ) : !ready ? (
@@ -187,12 +184,9 @@ function GlossaryList({ ready, glossaries, onOpen }: { ready: boolean; glossarie
 function Section({ kind, hint, children }: { kind: GlossaryKind; hint: string; children: ReactNode }) {
   const title = kind === 'translation' ? L().translationTitle : L().transcriptionTitle;
   return (
-    <section aria-label={title}>
-      <div className={section}>
-        <h2 className={sectionTitle}>{title}</h2>
-        <p className={sectionHint}>{hint}</p>
-      </div>
-      {children}
+    <section aria-label={title} className="flex min-w-0 flex-col gap-3">
+      <SubHeading title={title} hint={hint} />
+      <div className="min-w-0">{children}</div>
     </section>
   );
 }

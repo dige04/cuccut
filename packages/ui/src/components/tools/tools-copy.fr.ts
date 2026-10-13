@@ -6,9 +6,9 @@ import type { ToolsMessages } from './tools-copy.ts';
 export const fr: ToolsMessages = {
   gallery: {
     title: "Outils",
-    lede: "Fournissez un fichier ou du texte ; un modèle le traite directement et enregistre les résultats dans Space. Aucun Agent à connecter.",
+    lede: "Fournissez un fichier ou du texte ; un modèle le traite directement et enregistre les résultats dans la Bibliothèque. Aucun Agent à connecter.",
 
-    ledeNote: "Résultats automatiquement dans Space (stockés localement), avec téléchargement de copie possible.",
+    ledeNote: "Résultats automatiquement dans la Bibliothèque (stockés localement), avec téléchargement de copie possible.",
     planned: "Bientôt disponible",
     foot: "Autres outils à venir : conversion, extraction audio, découpage, sous-titres par lots, etc.",
     loading: "Chargement de l’état des modèles…",
@@ -28,7 +28,7 @@ export const fr: ToolsMessages = {
 
 
   save: {
-    view: "Voir dans Space",
+    view: "Voir dans la Bibliothèque",
   },
 
 
@@ -37,7 +37,7 @@ export const fr: ToolsMessages = {
     savedIn: (dir: string) => `Enregistré dans ${dir}`,
     movie: "Écrit dans la vidéo",
     open: "Ouvrir dans l’éditeur",
-    inSpace: "Voir dans Space",
+    inSpace: "Voir dans la Bibliothèque",
     get reveal() {
       return revealLabel();
     },
@@ -143,7 +143,7 @@ export const fr: ToolsMessages = {
     empty: "Rien de généré pour l'instant",
     emptyBody: "Écrivez le texte, choisissez une voix et cliquez « Générer la parole ».",
     sideFoot:
-      "Audio généré stocké à l’emplacement de sauvegarde et dans Audio de Space ; « Télécharger » enregistre une copie où vous voulez. Synthèse cloud via l’API du fournisseur, facturée selon ses règles.",
+      "Audio généré stocké à l’emplacement de sauvegarde et dans Audio de la Bibliothèque ; « Télécharger » enregistre une copie où vous voulez. Synthèse cloud via l’API du fournisseur, facturée selon ses règles.",
     reused: (name: string) => `Texte et réglages restaurés pour ${name}`,
     submitted: "Génération démarrée",
     submitFailed: (message: string) => `Démarrage en échec : ${message}`,
@@ -164,7 +164,7 @@ export const fr: ToolsMessages = {
     change: "Changer…",
     pickTitle: "Choisir un emplacement pour cette exécution",
     pickFailed: (message: string) => `Impossible de choisir un dossier : ${message}`,
-    saveNote: "Résultats dans Space, fichiers dans ce dossier ; noms en conflit numérotés, jamais d’écrasement.",
+    saveNote: "Résultats dans la Bibliothèque, fichiers dans ce dossier ; noms en conflit numérotés, jamais d’écrasement.",
 
     saveFoot: (note: string, once: boolean) =>
       `${note} ${once ? "Seulement pour cette exécution ; changez" : "Changer"} le défaut dans Réglages › Général.`,
@@ -236,7 +236,7 @@ export const fr: ToolsMessages = {
     empty: "Rien de généré pour l'instant",
     emptyBody: "Décrivez l’image, choisissez un modèle et cliquez « Générer une image ».",
     sideFoot:
-      "Images stockées à l’emplacement de sauvegarde et dans Images de Space ; « Télécharger » copie où vous voulez. Les fournisseurs cloud peuvent conserver une copie des images.",
+      "Images stockées à l’emplacement de sauvegarde et dans Images de la Bibliothèque ; « Télécharger » copie où vous voulez. Les fournisseurs cloud peuvent conserver une copie des images.",
     again: "Une autre prise",
     againDone: "Prompt et réglages de cette prise restaurés · graine vide pour un nouveau tirage",
     failed: (message: string) => `Rien de généré · ${message}`,
@@ -259,12 +259,12 @@ export const fr: ToolsMessages = {
   text: {
     title: "Génération de texte",
     submit: "Générer du texte",
-    lede: "Saisissez contenu et instructions pour appeler directement un modèle ; documents générés enregistrés dans Space.",
+    lede: "Saisissez contenu et instructions pour appeler directement un modèle ; documents générés enregistrés dans la Bibliothèque.",
     inputLabel: "Instructions",
     material: "Sources jointes",
-    materialAdd: "Joindre depuis Space…",
+    materialAdd: "Joindre depuis la Bibliothèque…",
     materialRemove: "Retirer",
-    materialNote: "Joignez un document ou des sous-titres de Space ; texte envoyé après vos instructions.",
+    materialNote: "Joignez un document ou des sous-titres de la Bibliothèque ; texte envoyé après vos instructions.",
     materialPicked: (name: string) => `Texte joint de « ${name} »`,
     inputPlaceholder: "Décrivez quoi générer, ou collez une source et demandez une réécriture ou un résumé",
     sample: "Insérer un exemple",
@@ -275,11 +275,11 @@ export const fr: ToolsMessages = {
     noModel: "Aucun modèle de texte disponible",
     noModelBody: "Connectez un fournisseur (clé) dans Réglages › Modèles › Génération de texte › Modèles cloud, puis choisissez ici.",
     side: "Historique",
-    viewInSpace: "Voir dans Space",
+    viewInSpace: "Voir dans la Bibliothèque",
     empty: "Aucun résultat",
-    emptyBody: "Résultats enregistrés automatiquement dans Space à la fin.",
+    emptyBody: "Résultats enregistrés automatiquement dans la Bibliothèque à la fin.",
     sideFoot:
-      "Texte complet stocké localement et dans Documents de Space (nom « Texte généré-date-heure ») ; « Télécharger » copie où vous voulez. Appels cloud via l’API du fournisseur, facturés au token.",
+      "Texte complet stocké localement et dans Documents de la Bibliothèque (nom « Texte généré-date-heure ») ; « Télécharger » copie où vous voulez. Appels cloud via l’API du fournisseur, facturés au token.",
     waiting: "En attendant le modèle…",
     copy: "Copier",
     download: "Télécharger",
@@ -361,10 +361,10 @@ export const fr: ToolsMessages = {
     pathLabel: "Ou collez le chemin complet",
     pathPlaceholder: "/Users/…/clip.mp4",
     pathAdd: "Ajouter",
-    spaceAdd: "Ajouter depuis Space…",
-    spaceDone: "Masquer Space",
-    spaceItem: (kind: string) => `Space · ${kind}`,
-    spaceGone: "Cet élément n’est plus dans Space",
+    spaceAdd: "Ajouter depuis la Bibliothèque…",
+    spaceDone: "Masquer la Bibliothèque",
+    spaceItem: (kind: string) => `Bibliothèque · ${kind}`,
+    spaceGone: "Cet élément n’est plus dans la Bibliothèque",
     moveUp: "Monter",
     moveDown: "Descendre",
     remove: "Retirer",
@@ -387,7 +387,7 @@ export const fr: ToolsMessages = {
     codec: "Codec",
     audio: "Audio",
     audioHint: "Audio toujours réencodé en AAC.",
-    saveNote: "Résultats dans Space et fichiers dans ce dossier ; aucun écrasement, noms en conflit numérotés (-2, -3).",
+    saveNote: "Résultats dans la Bibliothèque et fichiers dans ce dossier ; aucun écrasement, noms en conflit numérotés (-2, -3).",
     mergeHow: "Méthode de fusion des clips",
     mergeHowBody:
       "Le Runtime lit chaque clip : si codec, résolution, fréquence, pixels, audio, échantillonnage et canaux correspondent, copie des flux et réglages ci-dessous ignorés. Sinon réencodage sur l’image du premier, autres clips adaptés avec marges, silence ajouté aux clips muets. Méthode et motif dans l’historique à droite.",
@@ -425,29 +425,29 @@ export const fr: ToolsMessages = {
 
 
   toolsHome: {
-    lede: "Effectuez une opération précise sans session ni Agent. Résultats à l’emplacement par défaut et dans Space, prêts pour un outil, une vidéo ou l’Agent.",
-    foot: "Les éléments Space peuvent ouvrir un outil : ouvrez l’élément et choisissez « Traiter avec un outil… ».",
+    lede: "Effectuez une opération précise sans session ni Agent. Résultats à l’emplacement par défaut et dans la Bibliothèque, prêts pour un outil, une vidéo ou l’Agent.",
+    foot: "Les éléments de la Bibliothèque peuvent ouvrir un outil : ouvrez l’élément et choisissez « Traiter avec un outil… ».",
     statusFailed: (message: string) => `Impossible de lire l’état ; cartes peut-être obsolètes : ${message}`,
   },
 
   picker: {
     label: "Choisir une vidéo",
-    spaceLabel: "Choisir depuis Space",
+    spaceLabel: "Choisir depuis la Bibliothèque",
     countKinds: (kinds: string, n: number) => `Accepte ${kinds} · ${n} disponibles`,
-    emptySpaceTitle: "Aucun élément Space utilisable",
+    emptySpaceTitle: "Aucun élément de la Bibliothèque utilisable",
     emptySpaceBody: (kinds: string) => `Cet outil accepte ${kinds}. Changez la recherche ou utilisez un fichier local.`,
-    search: "Rechercher dans Space",
+    search: "Rechercher dans la Bibliothèque",
     searchPlaceholder: "Rechercher par nom",
     countTranscript: (n: number) => `${n} avec transcription disponible ; autres estompés`,
     count: (n: number) => `${n} disponibles`,
     noProject: "Aucun projet",
     minutes: (n: number) => `${n} min`,
     emptyTitle: "Aucune vidéo correspondante",
-    emptyBody: "Changez la recherche ou créez d’abord un élément Space.",
+    emptyBody: "Changez la recherche ou créez d’abord un élément de la Bibliothèque.",
     loading: "Chargement des vidéos…",
     failed: (message: string) => `Impossible de charger la liste des vidéos : ${message}`,
     pending: (n: number) => `${n} ${pluralForm('fr', n, { one: "vidéo n’a pas", other: "vidéos n’ont pas" })} terminé le chargement ; transcriptions peut-être absentes`,
-    scanning: "Première analyse de Space en cours ; liste peut-être incomplète",
+    scanning: "Première analyse de la Bibliothèque en cours ; liste peut-être incomplète",
     shown: (shown: number, total: number) => `Affichage de ${shown} de ${total}`,
     more: (n: number) => `Afficher ${n} de plus`,
   },
@@ -493,8 +493,8 @@ export const fr: ToolsMessages = {
     retried: "Repris depuis l’étape d’arrêt",
     retryFailed: (message: string) => `Impossible de réessayer : ${message}`,
     open: "Ouvrir dans l’éditeur",
-    noVideo: "Cette vidéo n’est pas encore dans Space ; revenez dans un instant.",
-    noOutputs: "Résultats pas encore dans Space ; revenez dans un instant.",
+    noVideo: "Cette vidéo n’est pas encore dans la Bibliothèque ; revenez dans un instant.",
+    noOutputs: "Résultats pas encore dans la Bibliothèque ; revenez dans un instant.",
     again: "Relancer",
     backToForm: "Retour aux réglages",
     inTasks: "Voir dans les tâches d'arrière-plan",
@@ -513,7 +513,7 @@ export const fr: ToolsMessages = {
     needFile: "Choisissez d’abord un fichier vidéo ou audio",
     needUrl: "Collez d’abord un lien http:// ou https://",
     needVideo: "Choisissez d’abord une vidéo",
-    needEntry: "Choisissez d’abord un élément Space",
+    needEntry: "Choisissez d’abord un élément de la Bibliothèque",
     needProject: "Choisissez d’abord un projet",
     needLang: "Choisissez d’abord une langue cible",
     sameLang: "Langue cible identique à la source ; choisissez-en une autre",
@@ -528,10 +528,10 @@ export const fr: ToolsMessages = {
 
 
   transcribeTool: {
-    lede: "Transforme vidéo ou audio en transcription et sous-titres. Par défaut, deux fichiers à l’emplacement de sauvegarde ; peut aussi créer une vidéo ou écrire dans une vidéo Space.",
+    lede: "Transforme vidéo ou audio en transcription et sous-titres. Par défaut, deux fichiers à l’emplacement de sauvegarde ; peut aussi créer une vidéo ou écrire dans une vidéo de la Bibliothèque.",
     targetTitle: "Résultat",
     targetNone:
-      "Transcription (.txt) et sous-titres (.srt) enregistrés ci-dessous, éléments Space utilisables pour traduire, synthétiser ou créer une vidéo.",
+      "Transcription (.txt) et sous-titres (.srt) enregistrés ci-dessous, éléments de la Bibliothèque utilisables pour traduire, synthétiser ou créer une vidéo.",
     createFile:
       "Médias laissés en place et liés sans copie. Nouvelle vidéo du projet, avec transcription et calque de sous-titres modifiable.",
 

@@ -40,7 +40,7 @@ import { useRuntime } from '../../runtime/context.tsx';
 import { useAgentSetup } from '../../state/agent-setup-store.ts';
 import { AgentProviderIcon } from '../agent-provider-icon.tsx';
 import { CommandBlock, ExecutableField, RunCommandDialog, copyText, type CommandRunner } from './agent-command-block.tsx';
-import { SettingRow } from './agent-panels.tsx';
+import { SettingsRow } from './settings-ui.tsx';
 import { CodexImageRow } from './codex-image-row.tsx';
 import { CARD_COPY } from './agent-card-copy.ts';
 import { AGENT_COPY, ADDED_COPY, UNTESTED } from './agent-copy.ts';
@@ -80,7 +80,7 @@ const avatar = style({
   justifyContent: 'center',
   flexShrink: 0,
   size: 40,
-  borderRadius: 'lg',
+  borderRadius: '[12px]',
   borderWidth: 1,
   borderStyle: 'solid',
   borderColor: { default: 'gray-200', isReady: 'green-200' },
@@ -591,7 +591,7 @@ function InstalledDetail({
     <>
       {driver.capabilities.approvals ? null : <Note notice>{AGENT_COPY.fullAccessOnly}</Note>}
       {driver.tested ? null : <Note>{UNTESTED.body}</Note>}
-      <SettingRow label={CARD_COPY.defaultModel} desc={CARD_COPY.defaultModelDesc}>
+      <SettingsRow label={CARD_COPY.defaultModel} desc={CARD_COPY.defaultModelDesc}>
         <div className={pickers}>
           <Picker
             aria-label={CARD_COPY.defaultModelOf(driver.name)}
@@ -627,8 +627,8 @@ function InstalledDetail({
             </Picker>
           ) : null}
         </div>
-      </SettingRow>
-      <SettingRow
+      </SettingsRow>
+      <SettingsRow
         label={CARD_COPY.modelsOf(driver.name, driver.models.length)}
         desc={
           driver.models.length
@@ -638,20 +638,20 @@ function InstalledDetail({
         <Button variant="secondary" size="S" isDisabled={disabled || isBlocked(driver)} onPress={refreshModels}>
           {busy === 'models' ? CARD_COPY.refreshing : CARD_COPY.refreshModels}
         </Button>
-      </SettingRow>
+      </SettingsRow>
       {launch ? (
-        <SettingRow
+        <SettingsRow
           label={CARD_COPY.version(driver.version ?? null)}
           desc={launcher ? ADDED_COPY.versionPinned(launcher.spec) : ADDED_COPY.versionOwn}
         />
       ) : (
-        <SettingRow
+        <SettingsRow
           label={CARD_COPY.version(driver.version ?? null)}
           desc={CARD_COPY.versionDesc(update ? String(driver.latestVersion) : null, driver.minVersion || null, upgradeSource(plan))}
           below={plan.choices.length ? <InstallCommands setup={setup} copyLabel={CARD_COPY.upgradeCommand} /> : null}
         />
       )}
-      <SettingRow
+      <SettingsRow
         label={CARD_COPY.account}
         desc={
           launch
@@ -661,8 +661,8 @@ function InstalledDetail({
         <Button variant="secondary" size="S" isDisabled={!canLogin} onPress={onLogin}>
           {signedOut ? CARD_COPY.loginInTerminal : CARD_COPY.switchAccount}
         </Button>
-      </SettingRow>
-      <SettingRow
+      </SettingsRow>
+      <SettingsRow
         label={CARD_COPY.location}
         desc={CARD_COPY.locationDesc}
         below={
@@ -683,13 +683,13 @@ function InstalledDetail({
         }
       />
       {launch ? (
-        <SettingRow
+        <SettingsRow
           label={ADDED_COPY.launchRow}
           desc={ADDED_COPY.launchRowHint}
           below={<CommandBlock value={launchLine(launch, driver.custom?.envKeys ?? [])} copyLabel={ADDED_COPY.launchCopy} />}
         />
       ) : null}
-      <SettingRow label={CARD_COPY.troubleshoot} desc={CARD_COPY.troubleshootDesc}>
+      <SettingsRow label={CARD_COPY.troubleshoot} desc={CARD_COPY.troubleshootDesc}>
         {!driver.isDefault && driver.state === 'ready' ? (
           <Button variant="secondary" size="S" isDisabled={disabled} onPress={setDefault}>
             {CARD_COPY.setDefault}
@@ -698,7 +698,7 @@ function InstalledDetail({
         <Button variant="secondary" size="S" isDisabled={disabled} onPress={onRecheck}>
           {busy === 'detect' ? CARD_COPY.checking : CARD_COPY.runChecks}
         </Button>
-      </SettingRow>
+      </SettingsRow>
     </>
   );
 }

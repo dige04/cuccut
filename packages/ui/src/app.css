@@ -158,69 +158,6 @@ svg[role='img'][viewBox='0 0 20 20']:not(
 }
 
 /*
- * 外壳按钮（components/shell-button.tsx；原型 home-shell-chrome.css）：32×32 的安静按钮，图形（.cc-shell-icon）16×16 居中；
- * 标签页列表的行尾按钮 24×24。S2 的按钮是网格、图形跟字号走，这里不分层，直接盖过去。按下态的底色变量由 ShellButton 给。
- */
-.cc-shell-anchor {
-  display: inline-flex;
-}
-.cc-shell-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  padding: 0;
-}
-.cc-shell-button.cc-shell-button-small {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-}
-/* 外壳图形（components/shell-icons.tsx）：SVG 当遮罩，填 currentColor。 */
-.cc-shell-icon {
-  display: inline-block;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  background-color: currentColor;
-  mask-size: contain;
-  mask-position: center;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-  -webkit-mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-}
-.cc-shell-button[aria-pressed='true'] {
-  background-color: var(--cc-shell-pressed);
-}
-/* 标签页按钮的图形：外框中间叠加号（同为 20 网格、与外框同尺寸）或标签页数（10px，两位以上缩到 0.75）。 */
-.cc-tabstack {
-  position: relative;
-  display: inline-flex;
-  flex: none;
-  width: 16px;
-  height: 16px;
-}
-.cc-tabstack-overlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-}
-.cc-tabstack-count {
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.cc-tabstack-count.cc-tabstack-wide {
-  transform: scale(0.75);
-  letter-spacing: -0.5px;
-}
-
-/*
  * 模板封面（components/start/template-cover.tsx；原型 home-templates.css）：画进视频画面的内容。
  * 颜色由组件给（style 宏的 S2 token）；这里只有几何：统一的 16:10 格子里按模板的画幅放一帧，
  * --u 是画面里图形的单位，跟着尺寸档走。
@@ -628,28 +565,6 @@ svg[role='img'][viewBox='0 0 20 20']:not(
   color: var(--cc-prompt-placeholder);
 }
 
-/* 标签页列表的行尾按钮（components/workspace/workspace-view-controls.tsx；原型 home-shell-chrome.css）：行悬停或行内有焦点时才出现。 */
-.cc-tabs-row-full {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: inline-flex;
-  opacity: 0;
-  transition: opacity 150ms cubic-bezier(0.45, 0, 0.4, 1);
-}
-.cc-tabs-row:is(:hover, :focus-within) .cc-tabs-row-full {
-  opacity: 1;
-}
-
-/*
- * 侧栏浮出（components/shell-peek.tsx；原型 home-shell-chrome.css `.shell-side-peek`）：浮层里的侧栏撑满浮层高度；
- * 浮层自己有边框，侧栏右沿的分隔线不画（S2 宏的逐边边框键会被丢，写在这里）。
- */
-[data-shell-peek] > aside {
-  height: 100%;
-  border-inline-end-width: 0;
-}
-
 /*
  * 页签悬停缩略卡（components/workspace/workspace-tab-preview.tsx；原型 `.shell-tab-preview*`）：缩略图区的底边分隔线；
  * 面板的克隆按 960 × 600 排版，再整体缩到卡片宽（280 / 960）。分隔线颜色变量由组件给。
@@ -671,4 +586,89 @@ svg[role='img'][viewBox='0 0 20 20']:not(
   overflow: hidden;
   transform: scale(0.2916667);
   transform-origin: top left;
+}
+
+/*
+ * Composer (components/composer.tsx; agentcut PromptComposer). The S2 PromptField box becomes a recessed rounded well:
+ * no radial fill, no dark overlay, no inset edge layer — a quiet black/20 fill with a hairline and the field shadow.
+ * The glow layer (first child, shown while a run is going) stays.
+ *
+ * Layer hooks follow @react-spectrum/ai 0.4.0 `PromptFieldContainer`: the inset edge layer is the only child carrying
+ * `data-state`, and the overlay is the layer right before it. The content wrapper never matches either.
+ *
+ * Focus: the composer autofocuses (and react-aria counts a focus on load as focus-visible), so a yellow ring would sit
+ * next to the yellow Send in every view at rest. Focus is drawn neutral instead: a brighter hairline and a soft white
+ * halo, which keeps a visible indicator while Send stays the view's one tint.
+ */
+[data-composer] [role='group'][data-variant] > [data-variant][data-size] {
+  border-radius: var(--radius-xl, 20px);
+  background-image: none;
+  background-color: rgb(0 0 0 / 20%);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    var(--field-shadow);
+  transition: box-shadow 150ms ease;
+}
+[data-composer] [role='group'][data-variant] > [data-variant][data-size] > :is([data-state], :has(+ [data-state])) {
+  display: none;
+}
+[data-composer] [role='group'][data-variant][data-focus-within] > [data-variant][data-size] {
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 24%),
+    0 0 0 3px rgb(255 255 255 / 6%),
+    var(--field-shadow);
+}
+
+/* The agent and access pickers: two-line capsules, a small muted line (provider / "Access") over the value. */
+.cc-pick.cc-action {
+  height: auto;
+  min-height: 36px;
+  padding-block: 4px;
+  padding-inline: 14px 10px;
+  border-radius: 999px;
+}
+.cc-pick__lines {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  line-height: 1.15;
+  text-align: start;
+}
+.cc-pick__over {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+.cc-pick__main {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+/* "+" attach: a 36px outlined circle. */
+.cc-composer-attach.cc-action {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+/* Stop and Send: 36px capsules; Send carries the view's one yellow tint (theme/cuccut.css accent rule). */
+.cc-composer-send.cc-btn {
+  height: 36px;
+  min-height: 36px;
+  border-radius: 999px;
+}
+
+/* Suggestion chips under an empty thread (thread/thread-empty.tsx): rounded-full outlines. */
+[data-cc-suggestions] > button {
+  border-radius: 999px;
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted-foreground);
+}
+[data-cc-suggestions] > button:is([data-hovered], [data-focus-visible]) {
+  background-color: rgb(255 255 255 / 6%);
+  color: var(--foreground);
 }

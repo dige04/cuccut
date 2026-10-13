@@ -1,7 +1,6 @@
 import type { StageBarMessages } from './stage-bar-copy.ts';
 
 export const pl: StageBarMessages = {
-  bar: 'Sterowanie podglądem',
   ratio: 'Proporcje',
   ratioReadOnly: 'Proporcje · wideo jest tylko do odczytu',
   ratioApplied: (ratio: string) => `Zmieniono proporcje na ${ratio}`,

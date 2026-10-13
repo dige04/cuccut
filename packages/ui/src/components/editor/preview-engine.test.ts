@@ -688,18 +688,18 @@ test('字幕命中框随实际出帧通知；换帧先清空旧框，没有几�
 test('转录中的临时字幕：叠进送给计划器的序列，文档不向 Runtime 取，点选与提示都不算它，收起后照原样送', async () => {
   const live = {
     kind: 'caption',
-    itemId: 'bc-live-caption',
+    itemId: 'cc-live-caption',
     matrix: [1, 0, 0, 1, 0, 0],
     opacity: 1,
-    content: { documentId: 'bc-live-caption-document', styleDocumentId: 'bc-live-caption-style', sequenceSeconds: 0 },
+    content: { documentId: 'cc-live-caption-document', styleDocumentId: 'cc-live-caption-style', sequenceSeconds: 0 },
   };
   const plan = { canvas: { width: 1920, height: 1080, background: '#000000', backgroundAlpha: 1 }, layers: [live], voices: [] };
   const videos: Sequence[] = [];
   const sentDocuments: Array<Array<{ documentId: string; body: unknown }>> = [];
   const hit: CaptionHit = {
-    layerId: 'bc-live-caption',
-    itemId: 'bc-live-caption',
-    documentId: 'bc-live-caption-document',
+    layerId: 'cc-live-caption',
+    itemId: 'cc-live-caption',
+    documentId: 'cc-live-caption-document',
     cueId: 'live-0',
     cx: 1,
     cy: 1,
@@ -717,7 +717,7 @@ test('转录中的临时字幕：叠进送给计划器的序列，文档不向 R
     render: () => ({
       plan,
       captionHits: [hit],
-      warnings: [{ code: 'EXPORT_RENDER_NOTE', detail: 'bc-live-caption：字体换成了回退字体' }],
+      warnings: [{ code: 'EXPORT_RENDER_NOTE', detail: 'cc-live-caption：字体换成了回退字体' }],
       skipped: [],
       spectra: [],
     }),
@@ -743,10 +743,10 @@ test('转录中的临时字幕：叠进送给计划器的序列，文档不向 R
 
   const sent = videos.at(-1)!;
   expect(sent.revision).toBe('3');
-  expect(sent.items.map((item) => item.id)).toEqual(['v', 'bc-live-caption']);
+  expect(sent.items.map((item) => item.id)).toEqual(['v', 'cc-live-caption']);
   expect(loads).toEqual([]);
   const docs = sentDocuments.at(-1)!;
-  expect(docs.map((d) => d.documentId)).toEqual(['bc-live-caption-document', 'bc-live-caption-style']);
+  expect(docs.map((d) => d.documentId)).toEqual(['cc-live-caption-document', 'cc-live-caption-style']);
   expect(docs[0]!.body).toMatchObject({ clock: 'sequence', cues: [{ start: 1000, end: 3000, text: '你好' }] });
   expect(engine.captionHits).toEqual([]);
   expect(seen.at(-1)).toEqual({ kind: 'ready' });
@@ -755,7 +755,7 @@ test('转录中的临时字幕：叠进送给计划器的序列，文档不向 R
   engine.setCaptionView('off');
   expect(videos.at(-1)!.items.map((item) => item.id)).toEqual(['v']);
   engine.setCaptionView(null);
-  expect(videos.at(-1)!.items.map((item) => item.id)).toEqual(['v', 'bc-live-caption']);
+  expect(videos.at(-1)!.items.map((item) => item.id)).toEqual(['v', 'cc-live-caption']);
 
   engine.setLiveCaption('job_t', null);
   expect(videos.at(-1)).toBe(timed);

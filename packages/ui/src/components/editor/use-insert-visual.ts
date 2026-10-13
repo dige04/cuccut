@@ -34,8 +34,6 @@ export function useInsertVisual(): (sequence: Sequence, request: InsertRequest) 
     const ids = createdItemIds(receipt.createdIds, fresh);
     const pick = ids[selectLayer] ?? ids[0];
     useEditor.getState().select(pick ? [pick] : []);
-    // 已经有选中时，侧栏不会因为选区从有到有而自己翻页。
-    useEditor.setState({ panelTab: 'props' });
     const perSecond = sequence.fps.num / sequence.fps.den;
     const start = span.fromFrame / perSecond;
     const end = (span.fromFrame + span.durationFrames) / perSecond;

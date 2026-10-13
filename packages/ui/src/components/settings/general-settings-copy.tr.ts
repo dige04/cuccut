@@ -5,11 +5,6 @@ export const tr: GeneralSettingsMessages = {
   language: "Dil",
   languageDesc: "Hemen uygulanır; yeniden başlatma gerekmez.",
   languageSystem: (current) => `Sistem (${current})`,
-  appearance: "Görünüm",
-  appearanceDesc: "Yalnızca bu bilgisayardaki CucCut pencerelerini etkiler.",
-  schemeSystem: "Sistem",
-  schemeLight: "Açık",
-  schemeDark: "Koyu",
 
   saveFailed: (message) => `Kaydedilemedi: ${message}`,
 

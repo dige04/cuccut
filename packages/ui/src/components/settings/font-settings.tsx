@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from '@react-spectrum/s2';
 import Delete from '@react-spectrum/s2/icons/Delete';
+import { CloudDownload, HardDrive } from 'lucide-react';
 import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
 import { agoLabel } from '../../model/format.ts';
 import {
@@ -38,7 +39,7 @@ import {
 } from '../../state/font-library-store.ts';
 import { useSetting } from '../../state/settings-store.ts';
 import { FONT_COPY } from './font-settings-copy.ts';
-import { Group, Row } from './general-settings.tsx';
+import { Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './settings-ui.tsx';
 import { useSaveSettings, useSettingsReady } from './save-settings.ts';
 
 /*
@@ -48,13 +49,9 @@ import { useSaveSettings, useSettingsReady } from './save-settings.ts';
  * 只在桌面端出现：浏览器会话没有 `fonts.*`。
  */
 
-const lead = style({ marginTop: 0, marginBottom: 24, font: 'ui-sm', color: 'gray-600' });
 const mirror = style({ display: 'flex', flexDirection: 'column', gap: 4, width: 280, maxWidth: 'full' });
 const error = style({ font: 'ui-xs', color: 'negative' });
-const head = style({ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 });
-const headTitle = style({ flexGrow: 1, margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const meta = style({ font: 'ui-sm', color: 'gray-600' });
-const empty = style({ margin: 0, font: 'ui-sm', color: 'gray-600' });
+const empty = style({ marginTop: 0, marginBottom: 8, font: 'ui-sm', color: 'gray-600' });
 const name = style({ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1, minWidth: 0 });
 const family = style({
   font: 'ui',
@@ -65,19 +62,8 @@ const family = style({
   whiteSpace: 'nowrap',
 });
 const facts = style({ font: 'ui-sm', color: 'gray-600' });
-const group = style({ marginBottom: 48 });
-const card = style({ paddingX: 16, borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', borderRadius: 'xl' });
-const row = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  paddingY: 12,
-  borderTopWidth: 0,
-  borderXWidth: 0,
-  borderBottomWidth: { default: 1, ':last-child': 0 },
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
+// 行之间的分隔线由 RowList 画（settings-ui.tsx）。
+const row = style({ display: 'flex', alignItems: 'center', gap: 8, paddingY: 12 });
 
 export function FontSettings() {
   const { client } = useRuntime();
@@ -98,17 +84,16 @@ export function FontSettings() {
   const total = loaded ? catalogueCount(Object.values(statuses)) : null;
   return (
     <>
-      <p className={lead}>{FONT_COPY.lead(total)}</p>
-      <Group title={FONT_COPY.download}>
-        <Row label={FONT_COPY.autoDownload} desc={FONT_COPY.autoDownloadDesc}>
+      <SettingsGroup title={FONT_COPY.download} hint={FONT_COPY.lead(total)} icon={<CloudDownload />}>
+        <SettingsRow label={FONT_COPY.autoDownload} desc={FONT_COPY.autoDownloadDesc}>
           <Switch
             aria-label={FONT_COPY.autoDownload}
             isDisabled={!ready}
             isSelected={auto}
             onChange={(on) => void save({ 'fonts.autoDownload': on })}
           />
-        </Row>
-        <Row label={FONT_COPY.cssEndpoint} desc={FONT_COPY.cssEndpointDesc}>
+        </SettingsRow>
+        <SettingsRow label={FONT_COPY.cssEndpoint} desc={FONT_COPY.cssEndpointDesc}>
           <MirrorField
             label={FONT_COPY.cssEndpoint}
             placeholder="https://fonts.googleapis.com"
@@ -116,8 +101,8 @@ export function FontSettings() {
             isDisabled={!ready}
             onSave={(v) => save({ 'fonts.cssEndpoint': v })}
           />
-        </Row>
-        <Row label={FONT_COPY.fileEndpoint} desc={FONT_COPY.fileEndpointDesc}>
+        </SettingsRow>
+        <SettingsRow label={FONT_COPY.fileEndpoint} desc={FONT_COPY.fileEndpointDesc}>
           <MirrorField
             label={FONT_COPY.fileEndpoint}
             placeholder="https://fonts.gstatic.com"
@@ -125,8 +110,8 @@ export function FontSettings() {
             isDisabled={!ready}
             onSave={(v) => save({ 'fonts.fileEndpoint': v })}
           />
-        </Row>
-      </Group>
+        </SettingsRow>
+      </SettingsGroup>
       <DownloadedFonts />
     </>
   );
@@ -187,20 +172,23 @@ function DownloadedFonts() {
     }
   };
   return (
-    <section className={group} aria-label={FONT_COPY.downloaded}>
-      <div className={head}>
-        <h2 className={headTitle}>{FONT_COPY.downloaded}</h2>
-        <span className={meta}>{rows.length ? FONT_COPY.summary(rows.length, fmtBytes(totalBytes)) : FONT_COPY.none}</span>
-        <Button variant="secondary" size="S" isDisabled={!rows.length} onPress={() => setConfirming(true)}>
-          {FONT_COPY.clearAll}
-        </Button>
-      </div>
+    <Panel label={FONT_COPY.downloaded} className="flex flex-col gap-2 pb-1.5">
+      <PanelHeading
+        title={FONT_COPY.downloaded}
+        hint={rows.length ? FONT_COPY.summary(rows.length, fmtBytes(totalBytes)) : FONT_COPY.none}
+        icon={<HardDrive />}
+        action={
+          <Button variant="secondary" size="S" isDisabled={!rows.length} onPress={() => setConfirming(true)}>
+            {FONT_COPY.clearAll}
+          </Button>
+        }
+      />
       {rows.length ? (
-        <div className={card}>
+        <RowList>
           {rows.map((r) => (
             <DownloadedFontRow key={r.family} row={r} />
           ))}
-        </div>
+        </RowList>
       ) : (
         <p className={empty}>{FONT_COPY.empty}</p>
       )}
@@ -216,7 +204,7 @@ function DownloadedFonts() {
           </AlertDialog>
         ) : null}
       </DialogContainer>
-    </section>
+    </Panel>
   );
 }
 

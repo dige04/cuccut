@@ -56,7 +56,6 @@ export const de: ElementsMessages = {
   tabBrand: "Marke",
   tabProps: "Eigenschaften",
   currentTool: "Aktuelles Bearbeitungswerkzeug",
-  videoTools: "Videobearbeitungswerkzeuge",
   resizePanel: "Bereichsgröße ändern",
   added: (label: string, start: string, end: string) => `Hinzugefügt: ${label} · ${start} → ${end}`,
   undo: "Rückgängig machen",

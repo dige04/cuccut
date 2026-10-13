@@ -135,7 +135,8 @@ function barLine(
   tried: boolean,
 ): { text: string; bad: boolean } {
   if (block === undefined) return { text: FORM_COPY.loading, bad: false };
-  if (block) return { text: block, bad: true };
+  // The full reason is in the "Not available right now" card on the page; the header only says so.
+  if (block) return { text: TRANSCODE_COPY.unavailable, bad: true };
   if (ffmpeg.status === 'checking') return { text: TRANSCODE_COPY.ffmpegChecking, bad: false };
   if (ffmpeg.status === 'done' && !ffmpeg.line.ready) return { text: ffmpeg.line.text, bad: true };
   if (problems.length) return { text: problems[0]!, bad: tried };

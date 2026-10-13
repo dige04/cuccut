@@ -3,7 +3,7 @@ import type { SpaceMessages } from './space-copy.ts';
 
 export const ja: SpaceMessages = {
   searchPlaceholder: '名前、ファイル、動画内の発言を検索',
-  searchLabel: 'Space を検索',
+  searchLabel: 'ライブラリを検索',
 
   // 列表与菜单
   openVideo: '動画を開く',
@@ -136,7 +136,7 @@ export const ja: SpaceMessages = {
   // 删除视频（产品设计 §4.9）
   trashVideoTitle: 'この動画を削除しますか？',
   trashVideoBody: '動画フォルダ全体がプロジェクトのゴミ箱に移動し、復元できます。リンクされた元の素材はそのままの場所に残ります。',
-  trashVideoRelated: (n: number) => `この動画から書き出しまたは生成された ${n} 件の項目は Space に残り、動画と一緒には削除されません：`,
+  trashVideoRelated: (n: number) => `この動画から書き出しまたは生成された ${n} 件の項目はライブラリに残り、動画と一緒には削除されません：`,
   trashVideoConfirm: '動画を削除',
 
   // 彻底删除
@@ -152,7 +152,7 @@ export const ja: SpaceMessages = {
   // 改名
   renameTitle: '名前を変更',
   renameLabel: '表示名',
-  renameHint: (fileName: string) => `Space に表示される名前だけが変わり、ファイル自体はそのままです。空欄にすると「${fileName}」に戻ります。`,
+  renameHint: (fileName: string) => `ライブラリに表示される名前だけが変わり、ファイル自体はそのままです。空欄にすると「${fileName}」に戻ります。`,
   save: '保存',
 
   // 来源视频改过（产品设计 §4.6）
@@ -188,10 +188,10 @@ export const ja: SpaceMessages = {
   openForEdit: '開いて編集',
   newVideo: '新しい動画',
   revealUnavailable: 'このファイルはどのプロジェクトフォルダにもセッションフォルダにもないため、表示できる場所がありません',
-  sidebarLabel: 'Space のカテゴリ',
+  sidebarLabel: 'ライブラリのカテゴリ',
   kindsHeader: 'カテゴリ',
   mineHeader: '整理',
-  sidebarNote: 'Space には、すべてのプロジェクトの動画、素材、生成物が表示されます。ファイルはそれぞれのプロジェクトフォルダにあります。動画から書き出したファイルや生成したファイルはその動画にまとめられ、種類別に見ると個別に表示されます。',
+  sidebarNote: 'ライブラリには、すべてのプロジェクトの動画、素材、生成物が表示されます。ファイルはそれぞれのプロジェクトフォルダにあります。動画から書き出したファイルや生成したファイルはその動画にまとめられ、種類別に見ると個別に表示されます。',
   all: 'すべて',
   emptyFiltered: '一致する項目はありません',
   emptyTrash: 'ゴミ箱は空です',
@@ -210,12 +210,12 @@ export const ja: SpaceMessages = {
   issuesTitle: (n: number) => `${n} 個のフォルダを完全には一覧表示できませんでした`,
   issueTruncated: (detail: string) => `ファイルが多すぎるため、一部だけを一覧表示しました：${detail}`,
   issueUnreadable: (detail: string) => `読み取れません：${detail}`,
-  preparing: 'Space を準備中…',
+  preparing: 'ライブラリを準備中…',
   preparingBody: '初回はプロジェクトフォルダをスキャンする必要があります。しばらくお待ちください。',
   createIn: (project: string, hint: string) => `「${project}」内 · ${hint}`,
   whichProjectFor: (label: string) => `${label}：どのプロジェクトに`,
   entryActions: (name: string) => `「${name}」の操作`,
-  entriesLabel: 'Space の項目',
+  entriesLabel: 'ライブラリの項目',
   columnName: '名前',
   columnKind: '種類',
   columnSource: 'ソース',

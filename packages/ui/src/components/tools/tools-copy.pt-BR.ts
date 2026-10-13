@@ -6,9 +6,9 @@ import type { ToolsMessages } from './tools-copy.ts';
 export const ptBR: ToolsMessages = {
   gallery: {
     title: "Ferramentas",
-    lede: "Forneça arquivo ou texto; modelo processa direto e salva no Space, sem conectar agente.",
+    lede: "Forneça arquivo ou texto; modelo processa direto e salva na Biblioteca, sem conectar agente.",
 
-    ledeNote: "Resultados no Space, armazenados localmente; pode baixar cópia.",
+    ledeNote: "Resultados na Biblioteca, armazenados localmente; pode baixar cópia.",
     planned: "Em breve",
     foot: "Mais ferramentas virão: conversão, extração de áudio, cortes e legendas em lote.",
     loading: "Carregando estado dos modelos…",
@@ -28,7 +28,7 @@ export const ptBR: ToolsMessages = {
 
 
   save: {
-    view: "Ver no Space",
+    view: "Ver na Biblioteca",
   },
 
 
@@ -37,7 +37,7 @@ export const ptBR: ToolsMessages = {
     savedIn: (dir: string) => `Salvo em ${dir}`,
     movie: "Gravado no vídeo",
     open: "Abrir no editor",
-    inSpace: "Ver no Space",
+    inSpace: "Ver na Biblioteca",
     get reveal() {
       return revealLabel();
     },
@@ -143,7 +143,7 @@ export const ptBR: ToolsMessages = {
     empty: "Nada gerado ainda",
     emptyBody: "Escreva o texto, escolha uma voz e clique em “Gerar fala”.",
     sideFoot:
-      "Áudio salvo no local e em Áudio no Space; “Baixar” salva cópia onde escolher. Nuvem usa API e cobra pelas regras do provedor.",
+      "Áudio salvo no local e em Áudio na Biblioteca; “Baixar” salva cópia onde escolher. Nuvem usa API e cobra pelas regras do provedor.",
     reused: (name: string) => `Texto e configurações restaurados de ${name}`,
     submitted: "Geração iniciada",
     submitFailed: (message: string) => `Não iniciou: ${message}`,
@@ -164,7 +164,7 @@ export const ptBR: ToolsMessages = {
     change: "Alterar…",
     pickTitle: "Escolher local para esta execução",
     pickFailed: (message: string) => `Não foi possível escolher pasta: ${message}`,
-    saveNote: "Resultados no Space, arquivos nesta pasta; nomes repetidos numerados, nunca sobrescreve.",
+    saveNote: "Resultados na Biblioteca, arquivos nesta pasta; nomes repetidos numerados, nunca sobrescreve.",
 
     saveFoot: (note: string, once: boolean) =>
       `${note} ${once ? "Só para esta execução; mude" : "Trocar"} o padrão em Configurações › Geral.`,
@@ -236,7 +236,7 @@ export const ptBR: ToolsMessages = {
     empty: "Nada gerado ainda",
     emptyBody: "Descreva a imagem, escolha um modelo e clique em “Gerar imagem”.",
     sideFoot:
-      "Imagens salvas no local e em Imagens no Space; “Baixar” copia onde escolher. Provedor pode manter cópia.",
+      "Imagens salvas no local e em Imagens na Biblioteca; “Baixar” copia onde escolher. Provedor pode manter cópia.",
     again: "Outra tomada",
     againDone: "Prompt e configurações desta versão recuperados · semente vazia para sortear uma nova",
     failed: (message: string) => `Nada gerado · ${message}`,
@@ -259,10 +259,10 @@ export const ptBR: ToolsMessages = {
   text: {
     title: "Geração de texto",
     submit: "Texto gerado",
-    lede: "Informe conteúdo e instruções para chamar modelo direto; documentos no Space automaticamente.",
+    lede: "Informe conteúdo e instruções para chamar modelo direto; documentos na Biblioteca automaticamente.",
     inputLabel: "Instruções",
     material: "Material anexado",
-    materialAdd: "Anexar do Space…",
+    materialAdd: "Anexar da Biblioteca…",
     materialRemove: "Remover",
     materialNote: "Pode anexar documento ou legendas; texto enviado após as instruções.",
     materialPicked: (name: string) => `Anexando texto de “${name}”`,
@@ -275,11 +275,11 @@ export const ptBR: ToolsMessages = {
     noModel: "Nenhum modelo de texto disponível",
     noModelBody: "Conecte provedor e chave em Configurações › Modelos › Geração de texto › Modelos de nuvem; escolha aqui.",
     side: "Histórico",
-    viewInSpace: "Ver no Space",
+    viewInSpace: "Ver na Biblioteca",
     empty: "Sem resultados ainda",
-    emptyBody: "Resultados no Space ao concluir.",
+    emptyBody: "Resultados na Biblioteca ao concluir.",
     sideFoot:
-      "Texto completo local e em Documentos no Space (“Texto gerado-data-hora”); “Baixar” copia onde escolher. API de nuvem cobra por token.",
+      "Texto completo local e em Documentos na Biblioteca (“Texto gerado-data-hora”); “Baixar” copia onde escolher. API de nuvem cobra por token.",
     waiting: "Esperando o modelo…",
     copy: "Copiar",
     download: "Baixar",
@@ -361,10 +361,10 @@ export const ptBR: ToolsMessages = {
     pathLabel: "Ou cole caminho completo",
     pathPlaceholder: "/Users/…/clip.mp4",
     pathAdd: "Adicionar",
-    spaceAdd: "Adicionar do Space…",
-    spaceDone: "Ocultar Space",
-    spaceItem: (kind: string) => `Space · ${kind}`,
-    spaceGone: "Este item não está mais no Space",
+    spaceAdd: "Adicionar da Biblioteca…",
+    spaceDone: "Ocultar a Biblioteca",
+    spaceItem: (kind: string) => `Biblioteca · ${kind}`,
+    spaceGone: "Este item não está mais na Biblioteca",
     moveUp: "Mover para cima",
     moveDown: "Mover para baixo",
     remove: "Remover",
@@ -387,7 +387,7 @@ export const ptBR: ToolsMessages = {
     codec: "Codificando",
     audio: "Áudio",
     audioHint: "Áudio sempre reencodificado AAC.",
-    saveNote: "Resultados no Space e arquivos nesta pasta; sem sobrescrever, nomes repetidos numerados (-2, -3).",
+    saveNote: "Resultados na Biblioteca e arquivos nesta pasta; sem sobrescrever, nomes repetidos numerados (-2, -3).",
     mergeHow: "Como juntar",
     mergeHowBody:
       "Runtime lê os clipes: codec, resolução, quadros, pixels, áudio, amostragem e canais iguais = copia fluxos, ignora configurações. Caso contrário reencodifica para a primeira imagem, escala/preenche outros, silêncio para clipes sem áudio. Método e motivo no histórico à direita.",
@@ -425,29 +425,29 @@ export const ptBR: ToolsMessages = {
 
 
   toolsHome: {
-    lede: "Faça operação direta sem sessão ou agente. Resultados no local padrão e Space, prontos para ferramenta, novo vídeo ou agente.",
-    foot: "Itens Space podem ir direto à ferramenta: abra e “Processar com ferramenta…”.",
+    lede: "Faça operação direta sem sessão ou agente. Resultados no local padrão e na Biblioteca, prontos para ferramenta, novo vídeo ou agente.",
+    foot: "Itens da Biblioteca podem ir direto à ferramenta: abra e “Processar com ferramenta…”.",
     statusFailed: (message: string) => `Estado indisponível; cartões talvez desatualizados: ${message}`,
   },
 
   picker: {
     label: "Escolher vídeo",
-    spaceLabel: "Escolher do Space",
+    spaceLabel: "Escolher da Biblioteca",
     countKinds: (kinds: string, n: number) => `Aceita ${kinds} · ${n} disponíveis`,
-    emptySpaceTitle: "Nada no Space pode ser usado",
+    emptySpaceTitle: "Nada na Biblioteca pode ser usado",
     emptySpaceBody: (kinds: string) => `Esta ferramenta aceita ${kinds}. Busque diferente ou use arquivo local.`,
-    search: "Buscar no Space",
+    search: "Buscar na Biblioteca",
     searchPlaceholder: "Buscar por nome",
     countTranscript: (n: number) => `${n} com transcrição; restantes esmaecidos`,
     count: (n: number) => `${n} disponíveis`,
     noProject: "Sem projeto",
     minutes: (n: number) => `${n} min`,
     emptyTitle: "Nenhum vídeo correspondente",
-    emptyBody: "Busque diferente ou crie no Space primeiro.",
+    emptyBody: "Busque diferente ou crie na Biblioteca primeiro.",
     loading: "Lendo o vídeo…",
     failed: (message: string) => `Não foi possível carregar vídeos: ${message}`,
     pending: (n: number) => `${n} ${pluralForm('pt-BR', n, { one: "vídeo não", other: "vídeos não" })} terminou de carregar; pode faltar transcrição na lista`,
-    scanning: "Primeira busca no Space em andamento; lista incompleta",
+    scanning: "Primeira busca na Biblioteca em andamento; lista incompleta",
     shown: (shown: number, total: number) => `Mostrando ${shown} de ${total}`,
     more: (n: number) => `Mostrar ${n} a mais`,
   },
@@ -493,8 +493,8 @@ export const ptBR: ToolsMessages = {
     retried: "Reiniciado de onde parou",
     retryFailed: (message: string) => `Não foi possível repetir: ${message}`,
     open: "Abrir no editor",
-    noVideo: "Vídeo ainda fora do Space; confira em um momento.",
-    noOutputs: "Resultados ainda fora do Space; confira em um momento.",
+    noVideo: "Vídeo ainda fora da Biblioteca; confira em um momento.",
+    noOutputs: "Resultados ainda fora da Biblioteca; confira em um momento.",
     again: "Executar novamente",
     backToForm: "Voltar às configurações",
     inTasks: "Ver em Tarefas em segundo plano",
@@ -513,7 +513,7 @@ export const ptBR: ToolsMessages = {
     needFile: "Escolha vídeo ou áudio primeiro",
     needUrl: "Cole link http:// ou https:// primeiro",
     needVideo: "Escolha vídeo primeiro",
-    needEntry: "Escolha item do Space primeiro",
+    needEntry: "Escolha item da Biblioteca primeiro",
     needProject: "Escolha projeto primeiro",
     needLang: "Escolha idioma de destino primeiro",
     sameLang: "Idioma igual à origem; escolha outro",
@@ -528,10 +528,10 @@ export const ptBR: ToolsMessages = {
 
 
   transcribeTool: {
-    lede: "Transforma vídeo/áudio em transcrição e legendas. Por padrão, dois arquivos no local; pode criar vídeo ou gravar em vídeo Space existente.",
+    lede: "Transforma vídeo/áudio em transcrição e legendas. Por padrão, dois arquivos no local; pode criar vídeo ou gravar em vídeo existente da Biblioteca.",
     targetTitle: "Resultado",
     targetNone:
-      "Transcrição .txt e legendas .srt salvas abaixo, cada como item Space para traduzir, sintetizar ou criar vídeo.",
+      "Transcrição .txt e legendas .srt salvas abaixo, cada como item da Biblioteca para traduzir, sintetizar ou criar vídeo.",
     createFile:
       "Mídias mantidas e vinculadas, sem copiar. Novo vídeo no projeto com transcrição e camada editável de legendas.",
 

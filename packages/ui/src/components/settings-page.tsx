@@ -1,308 +1,323 @@
-import { useState, type ComponentType, type ReactNode } from 'react';
-import { PROTOCOL_VERSION, RUNTIME_VERSION } from '@cuccut/protocol';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { LOCALE_NATIVE_NAMES, PROTOCOL_VERSION, RUNTIME_VERSION, resolveLanguage } from '@cuccut/protocol';
+import { Button, ToastQueue } from '@react-spectrum/s2';
 import {
-  ActionButton,
-  Button,
-  Picker,
-  PickerItem,
-  SideNav,
-  SideNavHeader,
-  SideNavItem,
-  SideNavItemContent,
-  SideNavItemLink,
-  SideNavSection,
-  Text,
-  ToastQueue,
-  Tooltip,
-  TooltipTrigger,
-} from '@react-spectrum/s2';
-import FileText from '@react-spectrum/s2/icons/FileText';
-import HelpCircle from '@react-spectrum/s2/icons/HelpCircle';
-import InfoCircle from '@react-spectrum/s2/icons/InfoCircle';
-import Keyboard from '@react-spectrum/s2/icons/Keyboard';
-import Code from '@react-spectrum/s2/icons/Code';
-import Lock from '@react-spectrum/s2/icons/Lock';
-import Properties from '@react-spectrum/s2/icons/Properties';
-import Settings from '@react-spectrum/s2/icons/Settings';
-import TextIcon from '@react-spectrum/s2/icons/Text';
-import { style } from '@react-spectrum/s2/style' with { type: 'macro' };
-import { S } from './shell-copy.ts';
+  Activity,
+  AudioLines,
+  Bot,
+  BookA,
+  Captions,
+  CircleHelp,
+  Eye,
+  HardDrive,
+  Image as ImageIcon,
+  Info,
+  Keyboard,
+  Lock,
+  MessageSquareText,
+  Music,
+  Puzzle,
+  Server,
+  SlidersHorizontal,
+  Split,
+  Type,
+  type LucideIcon,
+} from 'lucide-react';
+import { BackHeader, PageRail, RailPage, SectionHeader, type RailGroup } from '../cc/components/page-chrome.tsx';
+import { CucCutTile } from '../cc/components/cuccut-mark.tsx';
+import { Button as CcButton } from '../cc/ui/button.tsx';
 import { HELP_COPY, revealLabel } from '../copy.ts';
 import { shortenPath } from '../model/format.ts';
+import { bundleCategory, isBundleInstalled } from '../model/models-local.ts';
 import {
+  MODEL_CATEGORY_INFO,
   SETTINGS_GROUPS,
   SETTINGS_SECTION_INFO,
-  MODEL_CATEGORY_INFO,
   modelPageFor,
   type ModelCategory,
   type ModelPage,
 } from '../model/settings-nav.ts';
 import { useRuntime } from '../runtime/context.tsx';
+import { loadSkills } from '../runtime/skill-commands.ts';
 import { useAppUpdate } from '../state/app-update-store.ts';
-import { useConnection } from '../state/connection-store.ts';
+import { defaultDriver, useConnection } from '../state/connection-store.ts';
+import { useGrants } from '../state/grants-store.ts';
 import { useHelp } from '../state/help-store.ts';
-import { hrefFor, useShell, type SettingsSection, type Route } from '../state/shell-store.ts';
-import { CATEGORY_ICON, ModelSettings } from './models-page.tsx';
-import { AgentIcon } from './agent-icon.tsx';
+import { useLibrary } from '../state/library-store.ts';
+import { useModels } from '../state/models-store.ts';
+import { useShell, type SettingsSection } from '../state/shell-store.ts';
+import { useSkills } from '../state/skills-store.ts';
+import { ModelSettings } from './models-page.tsx';
 import { UpdateStatus } from './app-update/update-status.tsx';
-import { SidebarTitle } from './page-sidebar.tsx';
-import { paneEdge } from './pane-edges.ts';
 import { RuntimeCard } from './services/runtime-card.tsx';
-import { AGENT_COPY } from './settings/agent-copy.ts';
+import { S } from './shell-copy.ts';
+import { AGENT_COPY, SKILLS_COPY } from './settings/agent-copy.ts';
 import { AgentPermissions } from './settings/agent-permissions.tsx';
 import { AgentSettings } from './settings/agent-settings.tsx';
 import { AgentSkills } from './settings/agent-skills.tsx';
 import { DataGrants } from './settings/data-grants.tsx';
 import { FontSettings } from './settings/font-settings.tsx';
 import { GeneralSettings } from './settings/general-settings.tsx';
+import { M as GENERAL } from './settings/general-settings-copy.ts';
+import { GLOSSARY_COPY } from './settings/glossary-copy.ts';
 import { GlossarySettings } from './settings/glossary-settings.tsx';
 import { ResourceCapacity } from './settings/resource-capacity.tsx';
+import { KeyCombo, Panel, PanelHeading, RowList, SettingsGroup, SettingsRow } from './settings/settings-ui.tsx';
+import { W } from './settings/workspace-copy.ts';
 
-/*
- * 窄窗口（设计稿 settings-local.css）：整页宽 ≤760 时左栏收起、正文顶上换成「设置 + 分节下拉」；正文那一栏 ≤560 时边距收小。
- * 两处都是容器查询：整页（page）是一个容器，左栏与下拉条量它；滚动区（scroll）是另一个，正文量它——
- * 下拉条放在滚动区外面，免得量到正文那一栏（量自己所在的那一栏会随左栏显隐来回翻）。
- */
-const page = style({ display: 'flex', flexGrow: 1, minHeight: 0, minWidth: 0, containerType: 'inline-size' });
-/** 左栏固定宽、不跟页面侧栏一起拖宽；行的底色与其它页面侧栏一致（app.css 的 `[data-cc-row]`）。 */
-const nav = style({
-  display: { default: 'flex', '@container (max-width: 760px)': 'none' },
-  flexDirection: 'column',
-  flexShrink: 0,
-  boxSizing: 'border-box',
-  width: 240,
-  minHeight: 0,
-  padding: 16,
-  overflowY: 'auto',
-  borderTopWidth: 0,
-  borderBottomWidth: 0,
-  borderStartWidth: 0,
-  borderEndWidth: 2,
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-  '--cc-row-hover': { type: 'backgroundColor', value: 'gray-75' },
-  '--cc-row-current': { type: 'backgroundColor', value: 'gray-100' },
-});
-const main = style({ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, minHeight: 0 });
-const compact = style({
-  display: { default: 'none', '@container (max-width: 760px)': 'flex' },
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 12,
-  flexShrink: 0,
-  paddingY: 16,
-  paddingX: 24,
-  borderTopWidth: 0,
-  borderXWidth: 0,
-  borderBottomWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-const compactTitle = style({ font: 'ui', color: 'gray-900' });
-const compactEnd = style({ display: 'flex', alignItems: 'center', gap: 4 });
-/** 左栏底部的「帮助」（设计稿 settings-local.css `.setpage__help`：上边距 spacing-300）。 */
-const helpEntry = style({ alignSelf: 'start', flexShrink: 0, marginTop: 16 });
-/** 只滚右侧；表单居中，最宽 960（.setpage__in）。 */
-const scroll = style({ flexGrow: 1, minHeight: 0, overflowY: 'auto', containerType: 'inline-size' });
-const column = style({
-  boxSizing: 'border-box',
-  width: 'full',
-  maxWidth: '[960px]',
-  marginX: 'auto',
-  paddingY: 32,
-  paddingX: { default: 32, '@container (max-width: 560px)': 24 },
-});
-const title = style({
-  marginTop: 0,
-  marginBottom: { default: 48, '@container (max-width: 560px)': 32 },
-  fontSize: '[22px]',
-  fontWeight: 'bold',
-  lineHeight: '[28px]',
-  color: 'gray-900',
-});
-const group = style({ marginBottom: 48 });
-const groupHead = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 });
-const groupTitle = style({ margin: 0, font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const lead = style({ marginTop: -8, marginBottom: 16, font: 'ui-sm', color: 'gray-600' });
-const card = style({ paddingX: 16, borderWidth: 1, borderStyle: 'solid', borderColor: 'gray-200', borderRadius: 'xl' });
-const row = style({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-  paddingY: 16,
-  borderTopWidth: 0,
-  borderXWidth: 0,
-  borderBottomWidth: { default: 1, ':last-child': 0 },
-  borderStyle: 'solid',
-  borderColor: 'gray-100',
-});
-const rowText = style({ flexGrow: 1, minWidth: 0 });
-const rowLabel = style({ font: 'ui', fontWeight: 'medium', color: 'gray-900' });
-const rowDesc = style({ marginTop: 4, font: 'ui-sm', color: 'gray-600', overflowWrap: 'anywhere', userSelect: 'text' });
-const rowControl = style({ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 });
-const rowValue = style({ font: 'ui', color: 'gray-800', userSelect: 'text' });
-const about = style({
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 4,
-  boxSizing: 'border-box',
-  maxWidth: '[480px]',
-  marginX: 'auto',
-  padding: 24,
-  borderWidth: 1,
-  borderStyle: 'solid',
-  borderColor: 'gray-200',
-  borderRadius: 'xl',
-  textAlign: 'center',
-});
-const aboutName = style({ font: 'heading-sm', color: 'gray-900' });
-const aboutVersion = style({ font: 'code-sm', color: 'gray-700', userSelect: 'text' });
-const aboutNote = style({ marginTop: 12, marginBottom: 0, font: 'ui-sm', color: 'gray-600' });
-
-/** 左栏各节的图标（page-settings.jsx 的 `icons`；Agent 用自绘的机器人，S2 没有这个语义）。 */
-const SECTION_ICON: Record<SettingsSection, ComponentType> = {
-  general: Settings,
+/** Rail icons per section (lucide, like the rest of the page chrome). */
+const SECTION_ICON: Record<SettingsSection, LucideIcon> = {
+  general: SlidersHorizontal,
   shortcuts: Keyboard,
-  fonts: TextIcon,
-  agent: AgentIcon,
-  skills: Code,
-  glossary: FileText,
+  fonts: Type,
+  agent: Bot,
+  skills: Puzzle,
+  glossary: BookA,
   privacy: Lock,
-  diagnostics: Properties,
-  about: InfoCircle,
+  diagnostics: Activity,
+  about: Info,
+};
+
+/** Rail icons per model category. */
+const CATEGORY_ICON: Record<ModelCategory, LucideIcon> = {
+  asr: Captions,
+  tts: AudioLines,
+  llm: MessageSquareText,
+  image: ImageIcon,
+  music: Music,
+  sep: Split,
+  vision: Eye,
 };
 
 const labelOf = (key: SettingsSection) => SETTINGS_SECTION_INFO.find((s) => s.key === key)?.label ?? S.settingsPage.general;
 
 /**
- * 设置（产品设计 §2.1，设计稿 page-settings.jsx）：左栏按「偏好设置 / Agent / 模型 / 应用」分组、固定不滚，只滚右侧；
- * 每节一个标题加若干组行卡片。Agent 提供方自己画标题（它的标题下面紧跟一句说明和三条事实）。
- * 窗口窄时左栏收起，换成正文顶上的分节下拉（换节用 replace，和点左栏一样不进前进后退）。
- * 左栏底部（窄窗时是下拉条末尾的图标按钮）是帮助中心的入口（设计稿 page-settings.jsx）。
+ * Settings, as agentcut's workspace shell: a glass back header ("Settings", and a note that everything here applies to
+ * every project), a rail of every section and model category with what each one holds written under its name, and the
+ * section in the middle — a heading with one sentence of what it decides, then solid panels of controls.
+ *
+ * Every section is a URL (`/settings/<section>`, `/settings/models/<category>/<page>`); switching sections replaces
+ * nothing else on the page. On narrow windows the rail wraps into chips above the section. Help sits in the header.
  */
 export function SettingsPage({ section = 'general', model, platform }: {
   section?: SettingsSection;
   model?: { category: ModelCategory; page?: ModelPage };
   platform: string;
 }) {
-  const replace = useShell((s) => s.replace);
   const web = useRuntime().host.platform === 'web';
-  const last = useShell((s) => s.modelPages);
-  const selected = model?.category ?? section;
-  const modelItems = MODEL_CATEGORY_INFO.map((item) => ({
-    ...item,
-    Icon: CATEGORY_ICON[item.key],
-    route: {
-      tab: 'models' as const,
-      category: item.key,
-      page: modelPageFor(item.key, model?.category === item.key ? model.page : undefined, last[item.key]),
-    },
-  }));
-  const sectionGroups = SETTINGS_GROUPS.map((group) => ({
-    ...group,
-    // 字体只在桌面端：浏览器会话没有 `fonts.*`。
-    items: group.keys.filter((key) => key !== 'fonts' || !web).map((key) => ({
-      key, label: labelOf(key), Icon: SECTION_ICON[key], route: { tab: 'settings' as const, section: key },
-    })),
-  }));
-  type NavGroup = {
-    id: string;
-    label: string;
-    items: { key: SettingsSection | ModelCategory; label: string; Icon: ComponentType; route: Route }[];
-  };
-  // 模型组夹在 Agent 与应用之间；组 id 不得与条目 key 相同（`agents` 对 `agent`）。
-  const groups: NavGroup[] = sectionGroups.flatMap((group): NavGroup[] =>
-    group.id === 'app' ? [{ id: 'models', label: S.settingsPage.models, items: modelItems }, group] : [group],
+
+  const header = (
+    <BackHeader
+      title={S.common.settings}
+      aside={
+        <>
+          <HardDrive aria-hidden className="size-3.5 shrink-0" />
+          <span className="truncate">{W.aside}</span>
+        </>
+      }
+      actions={
+        <CcButton variant="ghost" size="sm" onClick={(event) => useHelp.getState().open(event.currentTarget)}>
+          <CircleHelp aria-hidden />
+          <span className="max-sm:sr-only">{HELP_COPY.settingsEntry}</span>
+        </CcButton>
+      }
+    />
   );
-  const items = groups.flatMap((group) => group.items);
-  const current = items.find((item) => item.key === selected)!;
+
   return (
-    <div className={page}>
-      <nav ref={paneEdge} className={nav} aria-label={S.settingsPage.nav}>
-        <SidebarTitle>{S.common.settings}</SidebarTitle>
-        <SideNav aria-label={S.settingsPage.sections} selectedRoute={hrefFor(current.route)}>
-          {groups.map((group) => (
-            <SideNavSection key={group.id} id={group.id}>
-              <SideNavHeader>{group.label}</SideNavHeader>
-              {group.items.map(({ key, Icon, label: text, route }) => {
-                const href = hrefFor(route);
-                return (
-                  <SideNavItem key={key} id={key} textValue={text} href={href} data-cc-row="">
-                    <SideNavItemContent>
-                      <SideNavItemLink>
-                        <Icon />
-                        <Text>{text}</Text>
-                      </SideNavItemLink>
-                    </SideNavItemContent>
-                  </SideNavItem>
-                );
-              })}
-            </SideNavSection>
-          ))}
-        </SideNav>
-        <ActionButton isQuiet styles={helpEntry} onPress={(event) => useHelp.getState().open(event.target)}>
-          <HelpCircle />
-          <Text>{HELP_COPY.settingsEntry}</Text>
-        </ActionButton>
-      </nav>
-      <div className={main}>
-        <div className={compact}>
-          <span className={compactTitle}>{S.common.settings}</span>
-          <div className={compactEnd}>
-            <Picker
-              aria-label={S.settingsPage.sections}
-              selectedKey={selected}
-              onSelectionChange={(key) => {
-                const item = items.find((item) => item.key === key);
-                if (item && key !== selected) replace(item.route);
-              }}>
-              {items.map((item) => (
-                <PickerItem key={item.key} id={item.key}>
-                  {item.label}
-                </PickerItem>
-              ))}
-            </Picker>
-            <TooltipTrigger>
-              <ActionButton isQuiet aria-label={HELP_COPY.settingsEntry} onPress={(event) => useHelp.getState().open(event.target)}>
-                <HelpCircle />
-              </ActionButton>
-              <Tooltip>{HELP_COPY.settingsEntry}</Tooltip>
-            </TooltipTrigger>
-          </div>
-        </div>
-        <div key={selected} className={`${scroll} cc-scroll`}>
-          <div className={column}>
-            {model || section === 'agent' ? null : <h1 className={title}>{labelOf(section)}</h1>}
-            {model ? (
-              <ModelSettings category={model.category} page={model.page} />
-            ) : section === 'general' ? (
-              <GeneralSettings />
-            ) : section === 'shortcuts' ? (
-              <Shortcuts mac={platform === 'darwin'} />
-            ) : section === 'fonts' && !web ? (
-              <FontSettings />
-            ) : section === 'agent' ? (
-              <AgentSettings />
-            ) : section === 'skills' ? (
-              <AgentSkills />
-            ) : section === 'glossary' ? (
-              <GlossarySettings />
-            ) : section === 'privacy' ? (
-              <Privacy />
-            ) : section === 'diagnostics' ? (
-              <Diagnostics />
-            ) : (
-              <About />
-            )}
-          </div>
-        </div>
-      </div>
+    <RailPage header={header} rail={<SettingsRail section={section} model={model} web={web} />}>
+      <SectionBody key={model?.category ?? section}>
+        {model ? (
+          <ModelSettings category={model.category} page={model.page} />
+        ) : section === 'general' ? (
+          <Section title={labelOf('general')} blurb={W.generalBlurb}>
+            <GeneralSettings />
+          </Section>
+        ) : section === 'shortcuts' ? (
+          <Section title={labelOf('shortcuts')} blurb={W.shortcutsBlurb}>
+            <Shortcuts mac={platform === 'darwin'} />
+          </Section>
+        ) : section === 'fonts' && !web ? (
+          <Section title={labelOf('fonts')} blurb={W.fontsBlurb}>
+            <FontSettings />
+          </Section>
+        ) : section === 'agent' ? (
+          <Section title={AGENT_COPY.pageTitle} blurb={AGENT_COPY.lede}>
+            <AgentSettings />
+          </Section>
+        ) : section === 'skills' ? (
+          <Section title={labelOf('skills')} blurb={SKILLS_COPY.lede}>
+            <AgentSkills />
+          </Section>
+        ) : section === 'glossary' ? (
+          <Section title={labelOf('glossary')} blurb={GLOSSARY_COPY.list.lede}>
+            <GlossarySettings />
+          </Section>
+        ) : section === 'privacy' ? (
+          <Section title={labelOf('privacy')} blurb={W.privacyBlurb}>
+            <Privacy />
+          </Section>
+        ) : section === 'diagnostics' ? (
+          <Section title={labelOf('diagnostics')} blurb={W.diagnosticsBlurb}>
+            <Diagnostics />
+          </Section>
+        ) : (
+          <Section title={labelOf('about')} blurb={W.aboutBlurb}>
+            <About />
+          </Section>
+        )}
+      </SectionBody>
+    </RailPage>
+  );
+}
+
+/**
+ * The section in the middle. It is a size container (the skill grid and other Spectrum layouts measure it, not the
+ * window) and, being keyed by section, brings the page back to the top when the section changes.
+ */
+function SectionBody({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = ref.current?.closest('.cc-scroll');
+    if (scroller && scroller.scrollTop > 0) scroller.scrollTop = 0;
+  }, []);
+  return (
+    <div ref={ref} className="@container flex min-w-0 flex-col gap-5">
+      {children}
     </div>
   );
 }
 
-/** 外壳快捷键：[文案 key（null 为固定名）、macOS 键、其他平台键]；名字在渲染时读，切换语言即更新。 */
+/** One heading shape for every section: the name, a sentence saying what it decides, then its panels. */
+function Section({ title, blurb, actions, children }: { title: ReactNode; blurb?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+  return (
+    <>
+      <SectionHeader title={title} blurb={blurb} actions={actions} />
+      {children}
+    </>
+  );
+}
+
+/**
+ * The rail: every section and model category, each with what it holds written under its name. It is its own component
+ * so that what it watches (model bundles carry download progress) re-renders only the rail, and every summary is a
+ * derived primitive compared by value, so a progress tick that changes no count re-renders nothing.
+ */
+function SettingsRail({ section, model, web }: {
+  section: SettingsSection;
+  model?: { category: ModelCategory; page?: ModelPage };
+  web: boolean;
+}) {
+  const last = useShell((s) => s.modelPages);
+  const summary = useRailSummaries(web);
+  const selected: SettingsSection | ModelCategory = model?.category ?? section;
+
+  const entry = (key: SettingsSection) => ({
+    key,
+    label: labelOf(key),
+    summary: summary[key],
+    Icon: SECTION_ICON[key],
+    route: { tab: 'settings' as const, section: key },
+    current: selected === key,
+  });
+  const sectionGroups: RailGroup[] = SETTINGS_GROUPS.map((group) => ({
+    key: group.id,
+    label: group.label,
+    // Fonts exist only on the desktop: a browser session has no `fonts.*`.
+    entries: group.keys.filter((key) => key !== 'fonts' || !web).map(entry),
+  }));
+  const modelGroup: RailGroup = {
+    key: 'models',
+    label: S.settingsPage.models,
+    entries: MODEL_CATEGORY_INFO.map((info) => ({
+      key: info.key,
+      label: info.label,
+      summary: summary[info.key],
+      Icon: CATEGORY_ICON[info.key],
+      route: {
+        tab: 'models' as const,
+        category: info.key,
+        page: modelPageFor(info.key, model?.category === info.key ? model.page : undefined, last[info.key]),
+      },
+      current: selected === info.key,
+    })),
+  };
+  // Models sit between the agents and the app group.
+  const groups = sectionGroups.flatMap((group) => (group.key === 'app' ? [modelGroup, group] : [group]));
+  return <PageRail label={S.settingsPage.sections} groups={groups} />;
+}
+
+type RailSummaries = Record<SettingsSection | ModelCategory, string>;
+
+/** Installed bundles per local model category, or null before the models snapshot; a plain record compared shallowly. */
+const installedCounts = (s: ReturnType<typeof useModels.getState>): Partial<Record<ModelCategory, number>> | null => {
+  if (!s.ready) return null;
+  const counts: Partial<Record<ModelCategory, number>> = {};
+  for (const bundle of s.bundles) {
+    if (!isBundleInstalled(bundle)) continue;
+    const category = bundleCategory(bundle);
+    counts[category] = (counts[category] ?? 0) + 1;
+  }
+  return counts;
+};
+
+/** The default text-generation provider's name, '' when there is none, null before the capabilities arrive. */
+const textProvider = (s: ReturnType<typeof useModels.getState>): string | null => {
+  const text = s.ready ? s.capabilities?.generateText : undefined;
+  if (!text) return null;
+  const effective = text.effective;
+  return (effective ? text.providers.find((p) => p.providerId === effective.providerId)?.label : undefined) ?? '';
+};
+
+/**
+ * What each rail entry holds, from data the shell already mirrors. Every entry gets a line, so the rail keeps one row
+ * height whatever has loaded: while a mirror is still on its way the line says so, and the skill list (fetched on
+ * demand elsewhere) is asked for here once the Runtime is connected.
+ */
+function useRailSummaries(web: boolean): RailSummaries {
+  const runtime = useRuntime();
+  const language = useShell((s) => s.language);
+  const drivers = useConnection((s) => s.drivers);
+  const checking = useConnection((s) => s.checking);
+  const connected = useConnection((s) => s.state.status === 'connected');
+  const skills = useSkills((s) => (s.loaded ? s.skills.length : s.status === 'failed' ? -1 : null));
+  const glossaries = useLibrary((s) => (s.ready ? s.glossaries.length : null));
+  const grants = useGrants((s) => (s.ready ? s.grants.filter((g) => g.state === 'active').length : null));
+  const app = useAppUpdate((s) => s.snapshot?.current?.version ?? null);
+  const installed = useModels(useShallow(installedCounts));
+  const provider = useModels(textProvider);
+
+  useEffect(() => {
+    if (connected) void loadSkills(runtime);
+  }, [runtime, connected]);
+
+  const languages = typeof navigator === 'undefined' ? [] : (navigator.languages ?? [navigator.language]);
+  const agent = defaultDriver(drivers, checking);
+  const models = (category: ModelCategory) => (installed ? W.installed(installed[category] ?? 0) : W.checking);
+  return {
+    general: language === 'system' ? GENERAL.languageSystem(LOCALE_NATIVE_NAMES[resolveLanguage('system', languages)]) : LOCALE_NATIVE_NAMES[language],
+    shortcuts: W.shortcutCount(SHELL_KEYS.length),
+    fonts: W.fontsSummary,
+    agent: agent ? agent.name : drivers === null || checking.length ? W.checking : W.noAgent,
+    skills: skills === null ? W.checking : skills < 0 ? W.loadFailed : W.skillCount(skills),
+    glossary: web ? W.desktopOnly : glossaries === null ? W.checking : W.glossaryCount(glossaries),
+    // Grants and agent permissions are changed only in the desktop app (a browser has no `grants` topic).
+    privacy: web ? W.desktopOnly : grants === null ? W.checking : W.grantCount(grants),
+    diagnostics: connected ? W.runtimeOn : W.runtimeOff,
+    about: W.version(app ?? RUNTIME_VERSION),
+    asr: models('asr'),
+    tts: models('tts'),
+    llm: provider === null ? W.checking : provider || W.noDefault,
+    image: models('image'),
+    music: models('music'),
+    sep: models('sep'),
+    // No local models exist for visual understanding yet (its page says so).
+    vision: W.notYet,
+  };
+}
+
+/** Shell shortcuts: [copy key (or a fixed name), macOS keys, other platforms]; names are read at render so a language switch updates them. */
 const SHELL_KEYS: [string, string, string][] = [
   ['newSession', '⌘N', 'Ctrl+N'],
   ['Space', '⇧⌘H', 'Ctrl+Shift+H'],
@@ -327,27 +342,27 @@ const shellKeyLabel = (key: string): string => {
 
 function Shortcuts({ mac }: { mac: boolean }) {
   return (
-    <Group title={S.settingsPage.app}>
+    <SettingsGroup title={W.shortcutsPanel} icon={<Keyboard />}>
       {SHELL_KEYS.map(([key, macKey, otherKey]) => (
-        <Row key={key} label={shellKeyLabel(key)}>
-          <span className={rowValue}>{mac ? macKey : otherKey}</span>
-        </Row>
+        <SettingsRow key={key} label={shellKeyLabel(key)}>
+          <KeyCombo keys={mac ? macKey : otherKey} />
+        </SettingsRow>
       ))}
-    </Group>
+    </SettingsGroup>
   );
 }
 
-/** 一条本机路径；「在访达中显示」只在桌面端有，浏览器打不开 Runtime 那台机器的文件管理器（与视频信息对话框一样不画按钮）。 */
+/** A path on this machine; "Show in Finder" only on the desktop (a browser can't open the Runtime machine's file manager). */
 function PathRow({ label, path }: { label: string; path: string | null }) {
   const runtime = useRuntime();
   return (
-    <Row label={label} desc={path ? shortenPath(path) : '—'}>
+    <SettingsRow label={label} desc={path ? <span className="font-mono">{shortenPath(path)}</span> : '—'}>
       {runtime.host.platform === 'web' ? null : (
         <Button variant="secondary" size="S" isDisabled={!path} onPress={() => path && void runtime.host.revealPath(path)}>
           {revealLabel()}
         </Button>
       )}
-    </Row>
+    </SettingsRow>
   );
 }
 
@@ -359,23 +374,18 @@ function Privacy() {
   const info = useRuntimeInfo();
   return (
     <>
-      <Group
-        title={S.settingsPage.privacyTitle}
-        hint={S.settingsPage.privacyHint}>
+      <SettingsGroup title={S.settingsPage.privacyTitle} hint={S.settingsPage.privacyHint} icon={<HardDrive />}>
         <PathRow label={S.settingsPage.dataDir} path={info?.home ?? null} />
         <PathRow label={S.settingsPage.projectsDir} path={info?.projectsDir ?? null} />
         <WebDataRow />
-      </Group>
+      </SettingsGroup>
       <DataGrants />
-      <section className={group} aria-label={AGENT_COPY.permissionsTitle}>
-        <h2 className={groupTitle}>{AGENT_COPY.permissionsTitle}</h2>
-        <AgentPermissions />
-      </section>
+      <AgentPermissions />
     </>
   );
 }
 
-/** 功能区网页标签的数据（`persist:web` 分区）：Cookie、登录状态、存储与缓存。只有桌面宿主有网页标签。 */
+/** Data of web tabs in the workspace (`persist:web` partition): cookies, sign-ins, storage and cache. Only the desktop host has web tabs. */
 function WebDataRow() {
   const web = useRuntime().host.web;
   const [busy, setBusy] = useState(false);
@@ -389,69 +399,58 @@ function WebDataRow() {
       .finally(() => setBusy(false));
   };
   return (
-    <Row label={S.settingsPage.webData} desc={web ? S.settingsPage.webDataHint : S.settingsPage.webDataNone}>
+    <SettingsRow label={S.settingsPage.webData} desc={web ? S.settingsPage.webDataHint : S.settingsPage.webDataNone}>
       <Button variant="secondary" size="S" isDisabled={!web} isPending={busy} onPress={clear}>
         {S.settingsPage.clear}
       </Button>
-    </Row>
+    </SettingsRow>
   );
 }
 
 function Diagnostics() {
   const info = useRuntimeInfo();
-  // 连接状态、版本、进程、启动时间与数据目录在 Runtime 卡里（原来是服务总览的第一张卡）。
+  // Connection state, version, process, start time and data folder live in the Runtime card.
   return (
     <>
-      <Group title="Runtime" hint={S.settingsPage.runtimeHint}>
+      <Panel label="Runtime" className="flex flex-col gap-3 pb-1.5">
+        <PanelHeading title="Runtime" hint={S.settingsPage.runtimeHint} icon={<Server />} />
         <RuntimeCard />
-        <PathRow label={S.settingsPage.logsDir} path={info?.logsDir ?? null} />
-      </Group>
+        <RowList>
+          <PathRow label={S.settingsPage.logsDir} path={info?.logsDir ?? null} />
+        </RowList>
+      </Panel>
       <ResourceCapacity />
     </>
   );
 }
 
-/** 关于：居中一张卡片，写桌面应用、Runtime 与协议的版本。 */
+/** About: the CucCut mark and the versions of the desktop app, the interface and the Runtime, then updates. */
 function About() {
   const info = useRuntimeInfo();
-  // 桌面应用自己的版本与 build（更新比的就是它）；网页宿主没有。
+  // The desktop app's own version and build (what updates compare); the web host has none.
   const app = useAppUpdate((s) => s.snapshot?.current ?? null);
+  const lines = [
+    app ? S.settingsPage.appVersion(app.version, app.build) : null,
+    S.settingsPage.uiVersion(RUNTIME_VERSION, PROTOCOL_VERSION),
+    `Runtime ${info ? S.settingsPage.runtimeVersion(info.runtimeVersion, info.protocolVersion) : '—'}`,
+  ].filter((line): line is string => line !== null);
   return (
-    <section className={about} aria-label={S.settingsPage.version}>
-      <div className={aboutName}>CucCut</div>
-      {app ? (
-        <div className={aboutVersion}>{S.settingsPage.appVersion(app.version, app.build)}</div>
-      ) : null}
-      <div className={aboutVersion}>{S.settingsPage.uiVersion(RUNTIME_VERSION, PROTOCOL_VERSION)}</div>
-      <div className={aboutVersion}>Runtime {info ? S.settingsPage.runtimeVersion(info.runtimeVersion, info.protocolVersion) : '—'}</div>
+    <>
+      <Panel label={S.settingsPage.version} className="flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <CucCutTile className="size-11 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-xl font-bold tracking-[-0.04em] text-foreground">CucCut</div>
+            <ul className="m-0 mt-1 flex list-none flex-col gap-0.5 p-0 font-mono text-xs text-muted-foreground select-text">
+              {lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="m-0 text-xs text-muted-foreground">{S.settingsPage.versionNote}</p>
+      </Panel>
       <UpdateStatus />
-      <p className={aboutNote}>{S.settingsPage.versionNote}</p>
-    </section>
-  );
-}
-
-function Group({ title: text, hint, action, children }: { title: string; hint?: string; action?: ReactNode; children: ReactNode }) {
-  return (
-    <section className={group} aria-label={text}>
-      <div className={groupHead}>
-        <h2 className={groupTitle}>{text}</h2>
-        {action}
-      </div>
-      {hint ? <p className={lead}>{hint}</p> : null}
-      <div className={card}>{children}</div>
-    </section>
-  );
-}
-
-/** 一行：左边名字与说明，右边控件或值。 */
-function Row({ label, desc, children }: { label: string; desc?: string; children?: ReactNode }) {
-  return (
-    <div className={row}>
-      <div className={rowText}>
-        <div className={rowLabel}>{label}</div>
-        {desc ? <div className={rowDesc}>{desc}</div> : null}
-      </div>
-      {children ? <div className={rowControl}>{children}</div> : null}
-    </div>
+    </>
   );
 }

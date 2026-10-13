@@ -10,9 +10,9 @@ import { levelTitle, MCP_LEVELS } from '../../model/services-mcp.ts';
 import { serviceBusy, serviceStateLabel, SERVICE_DEFAULT_PORT } from '../../model/services.ts';
 import { useRuntime } from '../../runtime/context.tsx';
 import { useModels } from '../../state/models-store.ts';
-import { UtilityPage } from '../utility-page.tsx';
+import { UtilityShell } from '../utility-sidebar.tsx';
 import { ModelApiAliases } from './model-api-aliases.tsx';
-import { detail, detailXs, lede, panel, ServiceCard } from './service-card.tsx';
+import { detail, detailXs, panel, ServiceCard } from './service-card.tsx';
 import { ServiceApprovals } from './service-approval-card.tsx';
 import { ServiceClients } from './service-clients.tsx';
 import {
@@ -100,15 +100,16 @@ export function ModelApiServicePage() {
   } else if (serviceBusy(state)) heading = serviceStateLabel('model-api', state);
 
   return (
-    <UtilityPage
+    <UtilityShell
       kind="services"
+      flow
+      blurb={MODEL_API_COPY.lede}
       title={MODEL_API_COPY.title}
       actions={
         <Badge size="S" fillStyle="subtle" variant="neutral">
           {copy.scope}
         </Badge>
       }>
-      <p className={lede}>{MODEL_API_COPY.lede}</p>
       <ServiceCard
         id="model-api"
         state={state}
@@ -172,7 +173,7 @@ export function ModelApiServicePage() {
           </section>
         </>
       ) : null}
-    </UtilityPage>
+    </UtilityShell>
   );
 }
 

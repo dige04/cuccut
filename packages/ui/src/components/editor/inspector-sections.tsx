@@ -297,7 +297,7 @@ export function TimeSection({ item, sequence, assets, edit, canChange }: ItemPag
           <span className={key}>{IC.duration}</span>
           <span className={value}>{formatSeconds(end - start)}</span>
           <span className={key}>{IC.timecode}</span>
-          <span className={`${value} bc-tabular`}>
+          <span className={`${value} cc-tabular`}>
             {formatTimecode(start, fps)} – {formatTimecode(end, fps)}
           </span>
           {sourceIn !== null ? (
